@@ -260,7 +260,7 @@ class PointDesign:
             self.proplist = proplist
             self.xloflimit = xloflimit
             self.mufric = mufric
-            propulsions.plotTakeoffParetoFront(self, verbose = verbose)
+            propulsions.plotTakeoffParetoFrontNumba(self, verbose = verbose)
         
     def MGTOWCruisePareto(self, motorlist = None, nmots = None, proplist = None, 
                           lb = 0.0, ub = 1000.0, Ilimit = 100, xloflimit = 150, 
@@ -298,6 +298,7 @@ class PointDesign:
             self.taper = taper
             self.mufric = mufric
             performance.SimulateTakeoff(self, plot = plot, results = True)
+    
             
         
         

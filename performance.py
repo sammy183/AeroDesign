@@ -128,7 +128,7 @@ def SimulateTakeoff(self, texpect = 20, results = True, plot = False):
 
         plt.xlabel('Time (s)')
         
-        ax1.plot([t2[0], t2[0]], ax1.get_ylim(), '--', color = 'orange')
+        ax1.plot([t2[0], t2[0]], ax1.get_ylim(), '--', color = 'orange', label = 'Rotation')
         
         ax1.yaxis.label.set_color(p1[0].get_color())
         ax2.yaxis.label.set_color(p2[0].get_color())
@@ -138,9 +138,10 @@ def SimulateTakeoff(self, texpect = 20, results = True, plot = False):
         ax1.minorticks_on()
         ax2.minorticks_on()
         ax3.minorticks_on()
+        ax1.legend(loc = 'upper center')
         plt.annotate('Rotation', (1, 1))
-
-        plt.title(f'Ground Roll, Rotation Velocity = {V1[-1]/ftm:.1f} ft/s\nTotal Distance = {xlof_tot/ftm:.1f} ft, Total Time = {tlof_tot:.2f} s')
+        ax1.set_xlabel('Time (s)')
+        plt.title(f'Ground Roll\nVlof = {self.Vlof/ftm:.1f} fps, Vrotate = {V1[-1]/ftm:.1f} ft/s\nDistance = {xlof_tot/ftm:.1f} ft, Time = {tlof_tot:.2f} s')
         plt.show()
     
     if results:

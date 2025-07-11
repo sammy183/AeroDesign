@@ -281,9 +281,6 @@ def ModelCalcs(self, velocity, t):
         return(np.zeros(4))
     else:
         return(T, P, Itot, RPM)
-    
-    
-
 
 #%% RPM poly fitting
 def RPMPolyFits(self, V):
@@ -411,16 +408,15 @@ def PlotRuntimes(self, n, verbose = False, showthrust = True):
 
     if showthrust:
         ax2 = ax1.twinx()
-        ax2.plot(V_plot/ftm, T_maxds/lbfN, '#cc0000')
-        ax2.set_ylabel('Thrust (lbf) at end', color='#cc0000')
+        ax2.set_ylabel('Thrust (lbf) at {(1- self.ds)*100:.0f}% battery', color='#cc0000')
         D = 0.5*self.rho*(V_plot**2)*self.Sw*self.CD
         indx = np.argmin(np.abs(T_maxds - D))
-        
-        interceptpoint = ax2.plot(V_plot[indx]/ftm, T_maxds[indx]/lbfN, 'o', 
-                                  color='k', markersize=7, zorder = 5, 
-                                  label=f'Cruise = {V_plot[indx]/ftm:.2f} fps,\nat T = D = {T_maxds[indx]/lbfN:.2f} lbs')
-        ax2.legend(handles = interceptpoint, loc = 'center left')
-        ax2.plot(V_plot/ftm, D/lbfN, 'blue')
+        ax2.plot(V_plot/ftm, T_maxds/lbfN, '#cc0000', label = 'Thrust')
+        ax2.plot(V_plot/ftm, D/lbfN, 'blue', label = 'Drag')
+        ax2.plot(V_plot[indx]/ftm, T_maxds[indx]/lbfN, 'o', 
+                color='k', markersize=7, zorder = 5, 
+                label=f'Cruise = {V_plot[indx]/ftm:.2f} fps,\nat T = D = {T_maxds[indx]/lbfN:.2f} lbs')
+        ax2.legend(loc = 'center left')
         ax2.minorticks_on()
     
     ax1.grid()
@@ -693,7 +689,7 @@ def GetPointDesignData(self, m):
         else:
             for j, tspec in enumerate(tnew):
                 # NOT RETURNING CORRECT VALUES FOR SOME CASES!!!
-                Tspec, Pspec, Itotspec, RPMspec = ModelCalcsOptimized(velocity, tspec, rpm_list, 
+                Tspec, Pspec, Itotspec, RPMspec = ModelCalcsNumba(velocity, tspec, rpm_list, 
                                                                       self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                                                       self.KV, self.Rm, self.nmot, self.I0, self.ds)
                 if Tspec == 0:
@@ -884,7 +880,7 @@ def ThrustNumba(RPM, V, rpm_list, numba_prop_data):
         return (1 - weight) * thrusts[0] + weight * thrusts[1]
 
 @njit(fastmath=True)
-def ModelCalcsOptimized(velocity, t, rpm_list, numba_prop_data, CB, 
+def ModelCalcsNumba(velocity, t, rpm_list, numba_prop_data, CB, 
                         ns, Rint, KV, Rm, nmot, I0, ds):
     '''
     Optimized Numba-compatible version solving for T, P, Itot, RPM.
@@ -985,9 +981,6 @@ def ModelCalcsOptimized(velocity, t, rpm_list, numba_prop_data, CB,
         return T, P, Itot, RPM
 
     return 0.0, 0.0, 0.0, 0.0
-    
-    
-    
     
 #%% Pareto front for Static Thrust vs Cruise Speed for selected motor, battery
 # use multiprocessing as default
@@ -1198,7 +1191,7 @@ def VmaxLeanNumba(velocity_max, rpm_list, numba_prop_data, CB, ns, Rint, KV, Rm,
         
         # Search through RPM range to find maximum thrust
         for rpm in rpm_list:
-            T, P, Itot, RPM_actual = ModelCalcsOptimized(V, 0.0, rpm_list, numba_prop_data, 
+            T, P, Itot, RPM_actual = ModelCalcsNumba(V, 0.0, rpm_list, numba_prop_data, 
                                                         CB, ns, Rint, KV, Rm, nmot, I0, ds)
             if T > max_thrust:
                 max_thrust = T
@@ -1255,7 +1248,7 @@ def process_propeller_thrust_cruise_optimized(propname, self, verbose=False):
         rpm_list = np.array(self.RPM_VALUES, dtype=np.float64)
         
         # Get static thrust (V=0, t=0) using optimized function
-        T_static, P_static, I_static, RPM_static = ModelCalcsOptimized(
+        T_static, P_static, I_static, RPM_static = ModelCalcsNumba(
             0.0, 0.0, rpm_list, self.NUMBA_PROP_DATA, 
             self.CB, self.ns, self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds
         )
@@ -1435,99 +1428,382 @@ def PlotTCPareto_mp(self, verbose=False):
         
     return pareto_data
 
-#%% Takeoff Pareto Front Functions (single motor + battery, all propellers for now)
-def calculate_ground_roll_optimized(self):
-    """
-    Optimized ground roll calculation using simplified physics model.
-    """
+#%% OLD Takeoff Pareto Front Functions (single motor + battery, all propellers for now)
+# def calculate_ground_roll_optimized(self):
+#     """
+#     Optimized ground roll calculation using simplified physics model.
+#     """
     
-    try:
-        # Use average values approach for faster calculation
-        # Sample thrust at key velocities
-        V_samples = np.linspace(0.1, self.Vlof, 10)
-        thrust_samples = []
+#     try:
+#         # Use average values approach for faster calculation
+#         # Sample thrust at key velocities
+#         V_samples = np.linspace(0.1, self.Vlof, 10)
+#         thrust_samples = []
         
-        for V in V_samples:
-            T_N, _, _, _ = ModelCalcs(self, V, 0.0)
-            if T_N <= 0:
-                return None
-            thrust_samples.append(T_N)
+#         for V in V_samples:
+#             T_N, _, _, _ = ModelCalcs(self, V, 0.0)
+#             if T_N <= 0:
+#                 return None
+#             thrust_samples.append(T_N)
         
-        # Average thrust during ground roll
-        T_avg = np.mean(thrust_samples)
+#         # Average thrust during ground roll
+#         T_avg = np.mean(thrust_samples)
         
-        # Average aerodynamic properties during ground roll
-        V_avg = self.Vlof / 2  # Approximate average velocity
-        q_avg = 0.5 * self.rho * V_avg**2
+#         # Average aerodynamic properties during ground roll
+#         V_avg = self.Vlof / 2  # Approximate average velocity
+#         q_avg = 0.5 * self.rho * V_avg**2
         
-        # Approximate lift coefficient during ground roll
-        CL_avg = self.CLto  # takeoff lift coefficient (0 deg aoa + high lift devices)
+#         # Approximate lift coefficient during ground roll
+#         CL_avg = self.CLto  # takeoff lift coefficient (0 deg aoa + high lift devices)
         
-        # Drag coefficient
-        CD_avg = self.CD0 + (CL_avg**2) / (np.pi * self.AR * self.e)
+#         # Drag coefficient
+#         CD_avg = self.CD0 + (CL_avg**2) / (np.pi * self.AR * self.e)
         
-        # Average forces
-        L_avg = q_avg * self.Sw * CL_avg
-        D_avg = q_avg * self.Sw * CD_avg
-        N_avg = max(0, self.MGTOW - L_avg)
-        F_friction_avg = self.mufric * N_avg #mufric is the wheel rolling resistance (defaults to 0..04)
+#         # Average forces
+#         L_avg = q_avg * self.Sw * CL_avg
+#         D_avg = q_avg * self.Sw * CD_avg
+#         N_avg = max(0, self.MGTOW - L_avg)
+#         F_friction_avg = self.mufric * N_avg #mufric is the wheel rolling resistance (defaults to 0..04)
         
-        # Net force and acceleration
-        F_net_avg = T_avg - D_avg - F_friction_avg
+#         # Net force and acceleration
+#         F_net_avg = T_avg - D_avg - F_friction_avg
         
-        if F_net_avg <= 0:
-            return None  # Cannot accelerate
+#         if F_net_avg <= 0:
+#             return None  # Cannot accelerate
         
-        a_avg = F_net_avg / (self.MGTOW/9.81) # g = 9.81 for now
+#         a_avg = F_net_avg / (self.MGTOW/9.81) # g = 9.81 for now
         
-        # Kinematic equation: V² = V₀² + 2as, where V₀ = 0
-        # Solving for s: s = V² / (2a)
-        distance_m = (self.Vlof**2) / (2 * a_avg)
-        distance_ft = distance_m / ftm
-        return distance_ft
+#         # Kinematic equation: V² = V₀² + 2as, where V₀ = 0
+#         # Solving for s: s = V² / (2a)
+#         distance_m = (self.Vlof**2) / (2 * a_avg)
+#         distance_ft = distance_m / ftm
+#         return distance_ft
         
-    except Exception:
-        return None
+#     except Exception:
+#         return None
 
-def process_takeoff_cruise(propname, self, verbose = False):
+# def process_takeoff_cruise(propname, self, verbose = False):
+#     try:
+#         # Parse propeller data
+#         self.PROP_DATA, self.NUMBA_PROP_DATA = parse_propeller_data(propname)
+#         self.RPM_VALUES, self.THRUST_POLYS, self.TORQUE_POLYS, self.V_DOMAINS = initialize_RPM_polynomials(self.PROP_DATA)
+        
+#         # Optimized ground roll calculation
+#         takeoff_distance_ft = calculate_ground_roll_optimized(self)
+#         if takeoff_distance_ft is None or takeoff_distance_ft <= 0.0: # tloflimit:
+#             return(None)
+        
+#         # Get cruise speed at t=0 (full battery)
+#         V_cruise = VmaxLean(self, 0.0, t_in=0.0, Tlimit=True)
+        
+#         if V_cruise <= 0:
+#             return(None)
+        
+#         # # Get static thrust and power for current/power limit checking
+#         T_static, P_static, I_static, RPM_static = ModelCalcs(self, 0.0, 0.0)
+        
+#         if T_static <= 0:
+#             return(None)
+            
+#         return(propname, V_cruise/ftm, takeoff_distance_ft, 
+#                P_static, I_static, RPM_static)
+        
+#         if verbose:
+#             name = propname.replace('PER3_', '').replace('.dat', '')
+#             print(f'{name}: Cruise V = {V_cruise/ftm:.2f} fps, '
+#                   f'Takeoff dist = {takeoff_distance_ft:.0f} ft')
+            
+#     except Exception as e:
+#         if verbose:
+#             print(f'Failed for {propname}: {e}')
+#         return(None)
+    
+# def plotTakeoffParetoFront(self, verbose=False):
+#     '''
+#     Plots the Pareto front of cruise speed vs takeoff distance for provided propellers.
+#     '''    
+#     if self.proplist is None:
+#         with open("Databases/PropDatabase/proplist.txt", "r") as data_file:
+#             all_props = data_file.readlines()
+        
+#         self.proplist = []
+#         for item in all_props:
+#             if item == 'filelist.txt\n' or 'EP(CD)' in item or 'E(CD)' in item:
+#                 continue
+            
+#             # Filter by diameter
+#             try:
+#                 test = item.replace('PER3_', '').split('x')[0]
+#                 if float(test) < self.lb or float(test) > self.ub:
+#                     continue
+                
+#                 propname_corrected = item.replace('PER3_', '').replace('.dat', '').replace('\n', '')
+#                 self.proplist.append(propname_corrected)
+#             except:
+#                 continue
+#     print(f'Analyzing {len(self.proplist)} propellers for takeoff Pareto front...')
+            
+#     # Calculate propeller performance data
+#     prop_data = []
+    
+#     with multiprocessing.Pool(processes = multiprocessing.cpu_count()) as pool:
+#         process_func = partial(process_takeoff_cruise, self=self)
+#         results = list(tqdm(pool.imap(process_func, self.proplist)))
+        
+#     prop_data = [r for r in results if r is not None]
+        
+    
+#     if not prop_data:
+#         print('No valid propeller data found!')
+#         return []
+    
+#     # Categorize propellers by violations
+#     pareto_data = []
+#     current_violations = []
+#     power_violations = []
+#     takeoff_violations = []
+    
+#     # Sort by cruise speed for Pareto front identification
+#     prop_data.sort(key=lambda x: x[1], reverse=True)
+    
+#     min_takeoff_distance = float('inf')
+#     for prop in prop_data:
+#         propname, cruise_speed, takeoff_distance, power, current, RPM = prop
+        
+#         # Check violations
+#         if current > self.Ilimit:
+#             current_violations.append(prop)
+#         elif power > self.Pmax:
+#             power_violations.append(prop)
+#         elif takeoff_distance > self.xloflimit:
+#             takeoff_violations.append(prop)
+#         elif takeoff_distance < min_takeoff_distance:
+#             # This prop is Pareto optimal (better takeoff distance)
+#             pareto_data.append(prop)
+#             min_takeoff_distance = takeoff_distance
+    
+#     # Sort Pareto front by cruise speed for plotting
+#     pareto_data.sort(key=lambda x: x[1])
+    
+#     # Create the plot
+#     fig, ax = plt.subplots(figsize=(12, 8), dpi=1000)
+    
+#     # Plot all valid props as light points
+#     all_cruise = [p[1] for p in prop_data]
+#     all_takeoff = [p[2] for p in prop_data]
+#     ax.scatter(all_cruise, all_takeoff, alpha=0.8, s=20, color='lightgray', 
+#                label='All Props', zorder=1)
+    
+#     # Highlight violation points
+#     if current_violations:
+#         current_cruise = [p[1] for p in current_violations]
+#         current_takeoff = [p[2] for p in current_violations]
+#         ax.scatter(current_cruise, current_takeoff, s=30, color='red', 
+#                    label=f'I > {self.Ilimit}A', zorder=2, marker='x')
+    
+#     if power_violations:
+#         power_cruise = [p[1] for p in power_violations]
+#         power_takeoff = [p[2] for p in power_violations]
+#         ax.scatter(power_cruise, power_takeoff, s=30, color='orange', 
+#                    label=f'P > {self.Pmax}W', zorder=2, marker='^')
+    
+#     if takeoff_violations:
+#         takeoff_cruise = [p[1] for p in takeoff_violations]
+#         takeoff_takeoff = [p[2] for p in takeoff_violations]
+#         ax.scatter(takeoff_cruise, takeoff_takeoff, s=30, color='purple', 
+#                    label=f'TO > {self.xloflimit}ft', zorder=2, marker='s')
+    
+#     # Plot Pareto front
+#     if pareto_data:
+#         pareto_cruise = [p[1] for p in pareto_data]
+#         pareto_takeoff = [p[2] for p in pareto_data]
+#         ax.plot(pareto_cruise, pareto_takeoff, 'go-', linewidth=3, markersize=10, 
+#                 label='Pareto Front', zorder=4)
+        
+#         # Annotate Pareto points
+#         for propname, cruise_speed, takeoff_distance, power, current, RPM in pareto_data:
+#             name = propname.replace('PER3_', '').replace('.dat', '')
+#             ax.annotate(name, (cruise_speed, takeoff_distance), 
+#                        xytext=(5, 5), textcoords='offset points',
+#                        fontsize=9, ha='left', va='bottom', weight='bold',
+#                        bbox=dict(boxstyle='round,pad=0.3', facecolor='lightgreen', 
+#                                 alpha=0.8, edgecolor='darkgreen'))
+    
+#     # Add limit lines
+#     ax.axhline(y=self.xloflimit, color='purple', linestyle='--', alpha=0.7,
+#                    label=f'Takeoff Limit ({self.xloflimit} ft)')
+    
+#     ax.set_xlabel('Cruise Speed (fps)', fontsize=12)
+#     ax.set_ylabel('Takeoff Distance (ft)', fontsize=12)
+    
+#     # plot scaling
+#     test = np.array(all_takeoff)
+#     # first get distance between minimum and maximum:
+#     # minmax = test.max() - test.min()
+#     # if len(pareto_takeoff) > 0:
+#     #     ax.set_ylim([0, min(pareto_takeoff)*1.5])
+    
+#     if test.min() > self.xloflimit:
+#         ax.set_ylim([0, test.min()*1.5])
+#     else:
+#         ax.set_ylim([0, self.xloflimit*1.5])
+#     ax.grid(True, alpha=0.3)
+#     ax.minorticks_on()
+#     ax.legend(fontsize=10)
+    
+#     # Invert y-axis so shorter takeoff distances are "better" (higher on plot)
+#     ax.invert_yaxis()
+    
+#     # Title with setup info
+#     if self.nmot > 1:
+#         s = 's'
+#     else:
+#         s = ''
+#     plt.title(f'Pareto Front: Cruise Speed vs Takeoff Distance\n'
+#               f'{self.nmot} {self.motor_manufacturer} {self.motor_name} motor{s}; {self.ns}S {self.CB} mAh battery; '
+#               f'100% Battery\n'
+#               f'MGTOW = {self.MGTOW/lbfN:.2f} lbs, Sw = {self.Sw/ftm/ftm:.2f} ft², AR = {self.AR}, CL_max = {self.CLmax}, CD0 = {self.CD0}, e = {self.e}'
+#               , fontsize=11)
+    
+#     plt.tight_layout()
+#     plt.show()
+    
+#     # Print results
+#     print(f'\nPareto Front Results ({len(pareto_data)} propellers):')
+#     print(f'{"Propeller":<20} {"Cruise Speed (fps)":<18} {"Takeoff Dist (ft)":<18}')
+#     print('-' * 60)
+    
+#     for propname, cruise_speed, takeoff_distance, power, current, RPM in pareto_data:
+#         name = propname.replace('PER3_', '').replace('.dat', '')
+#         print(f'{name:<20} {cruise_speed:<18.2f} {takeoff_distance:<18.0f}')
+    
+#     print('\nViolation Summary:')
+#     print(f'Current violations (I > {self.Ilimit}A): {len(current_violations)}')
+#     print(f'Power violations (P > {self.Pmax}W): {len(power_violations)}')
+#     print(f'Takeoff violations (TO > {self.xloflimit}ft): {len(takeoff_violations)}')
+        
+#     return pareto_data
+
+#%% Takeoff Pareto Front with numba
+@njit(fastmath=True)
+def calculate_ground_roll_numba(velocity_lof, rpm_list, numba_prop_data, CB, ns, Rint, 
+                               KV, Rm, nmot, I0, ds, rho, Sw, CLto, CD0, AR, e, 
+                               MGTOW, mufric):
+    """
+    Numba-optimized ground roll calculation using simplified physics model.
+    """
+    # Sample thrust at key velocities during ground roll
+    V_samples = np.linspace(0.1, velocity_lof, 10)
+    thrust_samples = np.zeros(len(V_samples))
+    
+    valid_samples = 0
+    for i, V in enumerate(V_samples):
+        T_N, _, _, _ = ModelCalcsNumba(V, 0.0, rpm_list, numba_prop_data, 
+                                         CB, ns, Rint, KV, Rm, nmot, I0, ds)
+        if T_N > 0:
+            thrust_samples[i] = T_N
+            valid_samples += 1
+        else:
+            return -1.0  # Invalid configuration
+    
+    if valid_samples == 0:
+        return -1.0
+    
+    # Average thrust during ground roll (alternatively, use thrust at 1/sqrt(2)*Vlof as raymer says!!)
+    T_avg = np.mean(thrust_samples)
+    
+    # Average aerodynamic properties during ground roll
+    V_avg = velocity_lof / 2  # Approximate average velocity # CHANGE TO 1/sqrt(2)*Vlof soon
+    q_avg = 0.5 * rho * V_avg**2
+    
+    # Drag coefficient
+    CD_avg = CD0 + (CLto**2) / (np.pi * AR * e)
+    
+    # Average forces
+    L_avg = q_avg * Sw * CLto
+    D_avg = q_avg * Sw * CD_avg
+    N_avg = max(0.0, MGTOW - L_avg)
+    F_friction_avg = mufric * N_avg
+    
+    # Net force and acceleration
+    F_net_avg = T_avg - D_avg - F_friction_avg
+    
+    if F_net_avg <= 0:
+        return -1.0  # Cannot accelerate
+    
+    g = 9.81
+    a_avg = F_net_avg / (MGTOW / g)
+    
+    # Kinematic equation: V² = V₀² + 2as, where V₀ = 0
+    # Solving for s: s = V² / (2a)
+    distance_m = (velocity_lof**2) / (2 * a_avg)
+    return distance_m
+
+def process_takeoff_cruise_optimized(propname, self, verbose=False):
+    """
+    Optimized version using numba-compatible functions.
+    """
     try:
         # Parse propeller data
         self.PROP_DATA, self.NUMBA_PROP_DATA = parse_propeller_data(propname)
         self.RPM_VALUES, self.THRUST_POLYS, self.TORQUE_POLYS, self.V_DOMAINS = initialize_RPM_polynomials(self.PROP_DATA)
         
-        # Optimized ground roll calculation
-        takeoff_distance_ft = calculate_ground_roll_optimized(self)
-        if takeoff_distance_ft is None or takeoff_distance_ft <= 0.0: # tloflimit:
-            return(None)
+        # Convert to numpy arrays for numba compatibility
+        rpm_list = np.array(self.RPM_VALUES, dtype=np.float64)
         
-        # Get cruise speed at t=0 (full battery)
-        V_cruise = VmaxLean(self, 0.0, t_in=0.0, Tlimit=True)
+        # Calculate takeoff distance using numba-optimized function
+        takeoff_distance_m = calculate_ground_roll_numba(
+            self.Vlof, rpm_list, self.NUMBA_PROP_DATA,
+            self.CB, self.ns, self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds,
+            self.rho, self.Sw, self.CLto, self.CD0, self.AR, self.e, 
+            self.MGTOW, self.mufric
+        )
         
-        if V_cruise <= 0:
-            return(None)
+        if takeoff_distance_m <= 0.0:
+            return None
+            
+        takeoff_distance_ft = takeoff_distance_m / ftm
         
-        # # Get static thrust and power for current/power limit checking
-        T_static, P_static, I_static, RPM_static = ModelCalcs(self, 0.0, 0.0)
+        # Get cruise speed using numba-optimized function
+        velocity_max = self.V_DOMAINS[-1]
+        V_cruise = VmaxLeanNumba(
+            velocity_max, rpm_list, self.NUMBA_PROP_DATA,
+            self.CB, self.ns, self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds,
+            self.rho, self.CD, self.Sw
+        )
+        
+        if V_cruise <= 0.1:
+            return None
+        
+        # Get static thrust and power for current/power limit checking using optimized function
+        T_static, P_static, I_static, RPM_static = ModelCalcsNumba(
+            0.0, 0.0, rpm_list, self.NUMBA_PROP_DATA, 
+            self.CB, self.ns, self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds
+        )
+        
+        # Fallback to scipy version if numba version fails
+        if T_static <= 0:
+            T_static, P_static, I_static, RPM_static = ModelCalcs(self, 0.0, 0.0)
         
         if T_static <= 0:
-            return(None)
+            return None
             
-        return(propname, V_cruise/ftm, takeoff_distance_ft, 
-               P_static, I_static, RPM_static)
-        
         if verbose:
             name = propname.replace('PER3_', '').replace('.dat', '')
             print(f'{name}: Cruise V = {V_cruise/ftm:.2f} fps, '
                   f'Takeoff dist = {takeoff_distance_ft:.0f} ft')
             
+        return (propname, V_cruise/ftm, takeoff_distance_ft, 
+               P_static, I_static, RPM_static)
+        
     except Exception as e:
         if verbose:
             print(f'Failed for {propname}: {e}')
-        return(None)
-    
-def plotTakeoffParetoFront(self, verbose=False):
+        return None
+
+def plotTakeoffParetoFrontNumba(self, verbose=False):
     '''
-    Plots the Pareto front of cruise speed vs takeoff distance for provided propellers.
+    Optimized version of plotTakeoffParetoFront using numba optimizations.
     '''    
     if self.proplist is None:
         with open("Databases/PropDatabase/proplist.txt", "r") as data_file:
@@ -1548,17 +1824,17 @@ def plotTakeoffParetoFront(self, verbose=False):
                 self.proplist.append(propname_corrected)
             except:
                 continue
+    
     print(f'Analyzing {len(self.proplist)} propellers for takeoff Pareto front...')
             
-    # Calculate propeller performance data
+    # Calculate propeller performance data using optimized function
     prop_data = []
     
-    with multiprocessing.Pool(processes = multiprocessing.cpu_count()) as pool:
-        process_func = partial(process_takeoff_cruise, self=self)
+    with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+        process_func = partial(process_takeoff_cruise_optimized, self=self)
         results = list(tqdm(pool.imap(process_func, self.proplist)))
         
     prop_data = [r for r in results if r is not None]
-        
     
     if not prop_data:
         print('No valid propeller data found!')
@@ -1645,10 +1921,6 @@ def plotTakeoffParetoFront(self, verbose=False):
     
     # plot scaling
     test = np.array(all_takeoff)
-    # first get distance between minimum and maximum:
-    # minmax = test.max() - test.min()
-    # if len(pareto_takeoff) > 0:
-    #     ax.set_ylim([0, min(pareto_takeoff)*1.5])
     
     if test.min() > self.xloflimit:
         ax.set_ylim([0, test.min()*1.5])
@@ -1666,7 +1938,7 @@ def plotTakeoffParetoFront(self, verbose=False):
         s = 's'
     else:
         s = ''
-    plt.title(f'Pareto Front: Cruise Speed vs Takeoff Distance\n'
+    plt.title(f'Pareto Front: Cruise Speed vs Takeoff Distance (Optimized)\n'
               f'{self.nmot} {self.motor_manufacturer} {self.motor_name} motor{s}; {self.ns}S {self.CB} mAh battery; '
               f'100% Battery\n'
               f'MGTOW = {self.MGTOW/lbfN:.2f} lbs, Sw = {self.Sw/ftm/ftm:.2f} ft², AR = {self.AR}, CL_max = {self.CLmax}, CD0 = {self.CD0}, e = {self.e}'
@@ -1690,6 +1962,7 @@ def plotTakeoffParetoFront(self, verbose=False):
     print(f'Takeoff violations (TO > {self.xloflimit}ft): {len(takeoff_violations)}')
         
     return pareto_data
+
 
 #%% MGTOW vs Cruise velocity pareto front
 from itertools import cycle
@@ -1996,7 +2269,7 @@ def plotMultiMotorMGTOWPareto(self, verbose = False, AllPareto = False):
                 power_cruise = [p[1] for p in power_violations]
                 power_takeoff = [p[2] for p in power_violations]
                 ax.scatter(power_cruise, power_takeoff, s=30, color='orange', 
-                           label=f'Power limited', zorder=2, marker='^')
+                           label='Power limited', zorder=2, marker='^')
                 
             # Plot all valid props as light points
             all_cruise = [p[1] for p in prop_data]

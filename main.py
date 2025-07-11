@@ -80,7 +80,7 @@ b = 6.0*ftm
 h0 = 1.778 #m
 taper = 1.0
 
-MGTOW = 19.0*lbfN #30 lbf then converted to N 
+MGTOW = 35.0*lbfN #30 lbf then converted to N 
 
 # for the classic Cobra + 16x10E combo, the plot runtimes looks about accurate but the model calcs seems 
 # to be overpredicting the results; examine why! (also no measure of ESC/wire resistance....)
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     Design = ad.PointDesign() 
     Design.Battery('Gaoneng_8S_3300', 0.85)
     Design.Motor('C-4120/30', 2)
-    Design.Prop('12x12E')
+    Design.Prop('18x8E')
     Design.Parameters(rho, MGTOW, Sw, AR, CLmax, 
                       CLto, CL, CD, CD0, e)
 
@@ -108,10 +108,10 @@ if __name__ == '__main__':
     
 # Runtimes plots the runtime for a specified design vs the freestream velocity. 
 # The input number, n determines the number of iterations (more n --> nicer plot and more accurate but increased computational time)
-    # Design.Runtimes(200, verbose=False)
+    Design.Runtimes(50, verbose=False)
     
 # PointDesignData plots the thrust, RPM, current, and electric power for freestream velocity vs battery runtime
-    Design.PointDesignData(200, Ilimit = 100, grade = 15)
+    # Design.PointDesignData(200, Ilimit = 100, grade = 15)
 
 # ThrustCruisePareto plots the Pareto front of Static Thrust vs Cruise Velocity for a given PointDesign 
 # and either a sepecified propeller/list of propellers or all propellers in the APC database. 
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     # Design.ThrustCruisePareto(proplist = None, Ilimit = 105, AnnotateAll = False)
     
 # TakeoffCruisePareto plots the Pareto front of takeoff distance vs cruise velocity for a given PointDesign.
-    # Design.TakeoffCruisePareto(proplist = None, Ilimit = 105, xloflimit = 50, mufric = 0.04)
+    # Design.TakeoffCruisePareto(proplist = None, Ilimit = 105, xloflimit = 65, mufric = 0.04)
     
 # MGTOWCruisePareto plots the pareto front of MGTOW vs cruise velocity for a given PointDesign
 # This function can be applied to multiple motors at once, either by specifiying in motorlist and nmots lists or 
@@ -136,5 +136,5 @@ if __name__ == '__main__':
     # Design.MGTOWCruisePareto(lb = 15, ub = 18, Ilimit = 105, xloflimit = 60, mufric = 0.04,
     #                          SkipInvalid = True, AllPareto = False)
 
-#%% new funcs
+#%% performance funcs
     # Design.DetailedTakeoff(b, h0, taper, plot = True)
