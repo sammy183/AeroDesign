@@ -194,7 +194,7 @@ class PointDesign:
         else:
             return True
 
-    # first major operation: plot runtimes with T vs D at the given discharge
+    # Propulsion Functions
     def Runtimes(self, n, verbose = False, showthrust = True):
         '''
         TO BE OPTIMIZED LATER WITH SCIPY CONFIG OR MULTIPROCESSING
@@ -234,15 +234,6 @@ class PointDesign:
             self.AnnotateAll = AnnotateAll
             self.proplist = proplist
             propulsions.PlotTCPareto_mp(self, verbose = verbose)
-            
-    def testVmax(self):
-        print(propulsions.VmaxLean(self, 0.0, t_in = 0.0, Tlimit = True))
-        
-    def testMGTOW(self):
-        self.mufric = 0.04
-        self.xloflimit = 100
-        self.Ilimit = 100
-        print(propulsions.MGTOWinnerfunc_fast(self, 30.0))
         
     def TakeoffCruisePareto(self, proplist = None, lb = 0.0, ub = 1000.0,
                             Ilimit = 100, xloflimit = 150, mufric = 0.04,
@@ -282,11 +273,44 @@ class PointDesign:
             self.mufric = mufric
             self.AnnotateAll = AnnotateAll
             self.SkipInvalid = SkipInvalid
-            self.motorlist = motorlist 
-            self.nmots = nmots
+            
+            # if motorlist is undefined and a motor is given, 
+            #       run the preset motor and nmot
+            # if motorlist is undefined and no motors are given:
+            #       run all motors as singles
+            # if motorlist is defined but number of motors is not:
+            #       run all motors as singles and note
+            # if motorlist is defined and nmot is defined:
+            #       run as given
+            if motorlist == None and self.CheckVariables(proptest = False):
+                self.motorlist = [self.motor_name]
+                self.nmots = [self.nmot]
+            elif motorlist == None or motorlist == 'All' or motorlist == 'all':
+                self.motorlist = 'all'
+                self.nmots = nmots
+            elif motorlist != None and nmots == None:
+                self.motorlist = motorlist 
+                self.nmots = np.ones(len(self.motorlist))
+                print('\nNumber of motors undefined; running all motors as single')
+            else:
+                self.motorlist = motorlist
+                self.nmots = nmots
+            
             self.proplist = proplist
             propulsions.plotMultiMotorMGTOWPareto(self, verbose = False, AllPareto = AllPareto)
+
+                
+    def testVmax(self):
+        print(propulsions.VmaxLean(self, 0.0, t_in = 0.0, Tlimit = True))
         
+    def testMGTOW(self):
+        self.mufric = 0.04
+        self.xloflimit = 60
+        self.Ilimit = 105
+        print(propulsions.MGTOWinnerfunc_fast(self, 30.0))
+
+        
+    # performance functions
     def DetailedTakeoff(self, b, h0, taper, mufric = 0.04, plot = True):
         '''
         b is wingspan in m
@@ -298,6 +322,8 @@ class PointDesign:
             self.taper = taper
             self.mufric = mufric
             performance.SimulateTakeoff(self, plot = plot, results = True)
+            
+        
     
             
         

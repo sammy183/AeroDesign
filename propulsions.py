@@ -905,7 +905,7 @@ def ModelCalcsNumba(velocity, t, rpm_list, numba_prop_data, CB,
 
     # Bisection for Itot (primary formulation)
     low = 0.0
-    high = 200.0  # Adjust as needed
+    high = 400.0  # Adjust as needed
     tol = 1e-3
     max_iter = 100
     Itot = -1.0
@@ -1174,7 +1174,7 @@ def ModelCalcsNumba(velocity, t, rpm_list, numba_prop_data, CB,
 
 #%% numba version of velocity vs thrust pareto front!
 @njit(fastmath=True)
-def VmaxLeanNumba(velocity_max, rpm_list, numba_prop_data, CB, ns, Rint, KV, Rm, nmot, I0, ds, rho, CD, Sw):
+def VmaxLeanNumba(velocity_max, rpm_list, numba_prop_data, CB, ns, Rint, KV, Rm, nmot, I0, ds, rho, CD, Sw, t_in = 0.0):
     """
     Numba-optimized version of VmaxLean that finds maximum velocity where T >= D
     without using GEKKO. Uses bisection method for root finding.
@@ -1187,22 +1187,15 @@ def VmaxLeanNumba(velocity_max, rpm_list, numba_prop_data, CB, ns, Rint, KV, Rm,
         D = 0.5 * rho * (V**2) * CD * Sw
         
         # Find maximum thrust available at this velocity (t=0, full battery)
-        max_thrust = 0.0
-        
-        # Search through RPM range to find maximum thrust
-        for rpm in rpm_list:
-            T, P, Itot, RPM_actual = ModelCalcsNumba(V, 0.0, rpm_list, numba_prop_data, 
-                                                        CB, ns, Rint, KV, Rm, nmot, I0, ds)
-            if T > max_thrust:
-                max_thrust = T
-        
-        return max_thrust - D
+        T, P, Itot, RPM_actual = ModelCalcsNumba(V, t_in, rpm_list, numba_prop_data, 
+                                             CB, ns, Rint, KV, Rm, nmot, I0, ds)
+        return T - D
     
     # Bisection method to find maximum velocity where T >= D
-    low = 0.1
+    low = 1e-3
     high = velocity_max
-    tol = 0.1  # 0.1 m/s tolerance
-    max_iter = 50
+    tol = 1e-3  # 0.1 m/s tolerance
+    max_iter = 100
     
     # Check if solution exists
     if thrust_minus_drag_residual(high) < 0:
@@ -2043,7 +2036,6 @@ def MGTOWinnerfunc_fast(self, MGTOWinit):
             RPM_calc = self.KV * (Vin - Imot * self.Rm)
             
             T = self.nmot * Thrust(self, RPM, V)
-            
             if T <= 0:
                 result = 1e10, np.array([1e10] * 8)
                 cache[key] = result
@@ -2072,6 +2064,8 @@ def MGTOWinnerfunc_fast(self, MGTOWinit):
                 xlof - takeofflimit_m,  # xlof <= takeoff limit
                 RPM - self.RPM_VALUES[-1],  # RPM <= RPM_max
                 self.RPM_VALUES[0] - RPM,  # RPM >= RPM_min
+                -xlof, #xlof > 0!! this fixes the problems
+                
             ])
             
             result = objective, constraints
@@ -2092,7 +2086,7 @@ def MGTOWinnerfunc_fast(self, MGTOWinit):
         return obj
     
     # Initial guess - improved to be within bounds
-    MGTOW_init = min(max(MGTOWinit * lbfN, 1.0 * lbfN), 100.0 * lbfN)
+    MGTOW_init = MGTOWinit * lbfN # NOTE: restricted to 60 lbs maximum for now; change when eventually applying to different aircraft
     RPM_init = max(self.RPM_VALUES[0] + 1, min((self.RPM_VALUES[0] + self.RPM_VALUES[-1]) / 2, self.RPM_VALUES[-1] - 1))
     x0 = np.array([MGTOW_init, RPM_init])
     
@@ -2124,9 +2118,7 @@ def process_MGTOW_cruise(propname, self, motor):
     moved process_propeller outside of the MotorsMGTOWParetoPlot_fast function
     and you need to reapply InitializeSetup here so the motor changes 
     get applied to the prop data calcs!
-    
-    Old func so it returns options instead of modifying the PointDesign object
-    
+        
     '''
     self.Motor(motor, self.nmot) # initialize motor parameters using the PointDesign function
     
@@ -2135,8 +2127,15 @@ def process_MGTOW_cruise(propname, self, motor):
         self.PROP_DATA, self.NUMBA_PROP_DATA = parse_propeller_data(propname)
         self.RPM_VALUES, self.THRUST_POLYS, self.TORQUE_POLYS, self.V_DOMAINS = initialize_RPM_polynomials(self.PROP_DATA)
         
+        
         # Get static thrust and power for current/power limit checking
-        T_static, P_static, I_static, RPM_static = ModelCalcs(self, 0.0, 0.0)
+        # old function:
+        # T_static, P_static, I_static, RPM_static = ModelCalcs(self, 0.0, 0.0)
+        
+        rpm_list = np.array(self.RPM_VALUES)
+        T_static, P_static, I_static, RPM_static = ModelCalcsNumba(0.0, 0.0, rpm_list, self.NUMBA_PROP_DATA, 
+                                                                   self.CB, self.ns, self.Rint, self.KV, 
+                                                                   self.Rm, self.nmot, self.I0, self.ds)
         # print('thrust', T_static / lbfN)
         if T_static <= 0:
             return None
@@ -2146,19 +2145,30 @@ def process_MGTOW_cruise(propname, self, motor):
                 return None
             
         # Get cruise speed at t=0 (full battery)
-        V_cruise = VmaxLean(self, 0.0, t_in=0.0, Tlimit=True)
+        # old function:
+        # V_cruise = VmaxLean(self, 0.0, t_in = 0.0, Tlimit = True)
+        
+        # convergence can be +- 8 fps off!! Not sure what to do about that though
+        velocity_max = self.V_DOMAINS[-1]
+        V_cruise = VmaxLeanNumba(
+            velocity_max, rpm_list, self.NUMBA_PROP_DATA,
+            self.CB, self.ns, self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds,
+            self.rho, self.CD, self.Sw
+        )
         # print('cruise', V_cruise/ftm)
         
         if V_cruise <= 0:
             return None
 
+        # NOTE: this breaks for certain props with diameters < 10, they all return 60 lbs MGTOW (not possible)
         # Use fast MGTOW calculation
-        MGTOW = MGTOWinnerfunc_fast(self, 30.0)
-        # print('mgtow', MGTOW/lbfN)
-
-        if MGTOW <= 0.0:
+        MGTOW = MGTOWinnerfunc_fast(self, 30.0) # returns in LBS!!!
+        
+        # check for if V_cruise is < Vstall given by mgtow
+        Vlof = np.sqrt((2 * (MGTOW*lbfN)) / (self.rho * self.Sw * self.CLmax))*1.15
+        if V_cruise < Vlof or MGTOW <= 0.0:
             return None
-            
+    
         return (propname, V_cruise/ftm, MGTOW, P_static, I_static, RPM_static)
         
     except Exception as e:
@@ -2193,7 +2203,7 @@ def plotMultiMotorMGTOWPareto(self, verbose = False, AllPareto = False):
             
     df = pd.read_csv('Databases/Motors.csv')
 
-    if self.motorlist == None:
+    if self.motorlist == 'all':
         self.motorlist = list(df['Name'])
         self.nmots = np.ones(len(self.motorlist))
     
@@ -2201,7 +2211,7 @@ def plotMultiMotorMGTOWPareto(self, verbose = False, AllPareto = False):
     
     # to avoid color repetition
     colormap = plt.cm.nipy_spectral
-    colors = colormap(np.linspace(0, 1, len(self.motorlist)))
+    colors = colormap(np.linspace(0, 1, len(self.motorlist))) # for allpareto = True
     
     motor_color = {}
     colorindex = -1 # this mechanism of switching colors for each motor is very convoluted, but it works
@@ -2330,7 +2340,6 @@ def plotMultiMotorMGTOWPareto(self, verbose = False, AllPareto = False):
     cumulative_prop_data.sort(key=lambda x: x[0][0][1]) # sorting prop_data by cruise velocity, but the data's grouped so that full sorting is kinda impossible
     # cumulative pareto_data gathering
     if AllPareto == False:
-        
         ################# DO THIS BETTER IN THE FUTURE ####################
         # this part is a lot harder bc the data can't be nicely ordered when preserving the motor part (maybe zip it differently?)
         # lowk a class might help, add a class that has prop data
@@ -2349,6 +2358,7 @@ def plotMultiMotorMGTOWPareto(self, verbose = False, AllPareto = False):
                     max_MGTOW = MGTOW
                     max_cruise = cruise_speed
         
+        colors = colormap(np.linspace(0, 1, len(cumulative_pareto_data)))
         cumulative_pareto_data.sort(key = lambda x: x[0][1], reverse=True) # re-sorts by cruise speed, but accurately this time because the data is packaged better
         # prune cumulative_pareto_data at the end ig??? To get rid of the ones that really aren't good. Feels VERY inefficient tho
         max_MGTOW = float(0.0)

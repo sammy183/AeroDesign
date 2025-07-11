@@ -93,8 +93,8 @@ if __name__ == '__main__':
 # to initialize a setup:
     Design = ad.PointDesign() 
     Design.Battery('Gaoneng_8S_3300', 0.85)
-    Design.Motor('C-4120/30', 2)
-    Design.Prop('18x8E')
+    Design.Motor('HKIV-5035-380', 1)
+    Design.Prop('5x5E')
     Design.Parameters(rho, MGTOW, Sw, AR, CLmax, 
                       CLto, CL, CD, CD0, e)
 
@@ -108,7 +108,7 @@ if __name__ == '__main__':
     
 # Runtimes plots the runtime for a specified design vs the freestream velocity. 
 # The input number, n determines the number of iterations (more n --> nicer plot and more accurate but increased computational time)
-    Design.Runtimes(50, verbose=False)
+    # Design.Runtimes(50, verbose=False)
     
 # PointDesignData plots the thrust, RPM, current, and electric power for freestream velocity vs battery runtime
     # Design.PointDesignData(200, Ilimit = 100, grade = 15)
@@ -120,20 +120,24 @@ if __name__ == '__main__':
     
 # TakeoffCruisePareto plots the Pareto front of takeoff distance vs cruise velocity for a given PointDesign.
     # Design.TakeoffCruisePareto(proplist = None, Ilimit = 105, xloflimit = 65, mufric = 0.04)
+
     
 # MGTOWCruisePareto plots the pareto front of MGTOW vs cruise velocity for a given PointDesign
 # This function can be applied to multiple motors at once, either by specifiying in motorlist and nmots lists or 
 # by setting motorlist, nmots to None and running all motor + propeller combos in the database for one motor
  
 # example with specified motors + nmots:
+    # s = time.perf_counter()
     # Design.MGTOWCruisePareto(motorlist = ['C-4120/30', 'A-5025-310', 'HKII-4525-370'], nmots = [2, 1, 1], 
-    #                          proplist = ['16x10E', '18x12E', '14x14', '12x12', '15x10E', '16x16', '20x10E'],
-    #                          lb = 10.0, ub = 25.0,
-    #                          Ilimit = 105, xloflimit = 100, mufric = 0.04,
+    #                          proplist = ['10x55MR','16x10E', '18x12E', '14x14', '12x12', '15x10E', '16x16', '20x10E'],
+    #                          # lb = 10.0, ub = 25.0,
+    #                          Ilimit = 105, xloflimit = 60, mufric = 0.04,
     #                          SkipInvalid = False, AllPareto = False)
+    # e = time.perf_counter()
+    # print(f'Time Taken: {e-s:.2f}s')
 
-# example that runs all motors + nmots:
-    # Design.MGTOWCruisePareto(lb = 15, ub = 18, Ilimit = 105, xloflimit = 60, mufric = 0.04,
+# example that runs all motors + nmots:    
+    # Design.MGTOWCruisePareto(motorlist = 'all', Ilimit = 105, xloflimit = 60, mufric = 0.04,
     #                          SkipInvalid = True, AllPareto = False)
 
 #%% performance funcs
