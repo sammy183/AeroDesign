@@ -889,7 +889,7 @@ def ModelCalcsNumba(velocity, t, rpm_list, numba_prop_data, CB,
     def residual_primary(Itot):
         if Itot < 0:
             return 1e10
-        SOC = 1.0 - (Itot * t) / (CB * 3.6)
+        SOC = (CB*3.6 - Itot*t)/(CB*3.6)
         if SOC < 0 or SOC > 1:
             return 1e10
         Vsoc = 3.685 - 1.031 * np.exp(-35 * SOC) + 0.2156 * SOC - 0.1178 * SOC**2 + 0.3201 * SOC**3
@@ -908,7 +908,7 @@ def ModelCalcsNumba(velocity, t, rpm_list, numba_prop_data, CB,
     high = 400.0  # Adjust as needed
     tol = 1e-3
     max_iter = 100
-    Itot = -1.0
+    Itot = 100 #initial guess
     for _ in range(max_iter):
         mid = (low + high) / 2
         res_mid = residual_primary(mid)
@@ -922,20 +922,21 @@ def ModelCalcsNumba(velocity, t, rpm_list, numba_prop_data, CB,
     else:
         # If not converged, try alternate or return zeros
         Itot = -1.0
-
+    
     if Itot > 0 and Itot > I0 * nmot:
         # Compute values for primary case
-        SOC = 1.0 - (Itot * t) / (CB * 3.6)
+        SOC = (CB*3.6 - Itot*t)/(CB*3.6)
         Vsoc = 3.685 - 1.031 * np.exp(-35 * SOC) + 0.2156 * SOC - 0.1178 * SOC**2 + 0.3201 * SOC**3
         Vin = ns * Vsoc - Itot * Rint * ns
         RPM = KV * Vin - (KV * Rm / nmot) * Itot
         Q = nmot * TorqueNumba(RPM, velocity, rpm_list, numba_prop_data)
         T = nmot * ThrustNumba(RPM, velocity, rpm_list, numba_prop_data)
         P = (Itot / nmot) * Vin
-        if SOC < (1 - ds) or Q <= 0 or Itot < 0 or T <= 0:
+        # this SOC check doesn't quite make sense!
+        if SOC < (1 - ds) or Q <= 0 or T <= 0:
             return 0.0, 0.0, 0.0, 0.0
         return T, P, Itot, RPM
-
+    
     # Alternate formulation (when Itot <= I0 * nmot or primary failed)
     def residual_alt(RPM):
         if RPM < 0 or RPM > rpm_list[-1]:
@@ -967,7 +968,7 @@ def ModelCalcsNumba(velocity, t, rpm_list, numba_prop_data, CB,
             low = mid
     else:
         return 0.0, 0.0, 0.0, 0.0
-
+    
     if RPM > 0:
         Q = nmot * TorqueNumba(RPM, velocity, rpm_list, numba_prop_data)
         Itot = Q * (KV * np.pi / 30) + I0
@@ -981,7 +982,7 @@ def ModelCalcsNumba(velocity, t, rpm_list, numba_prop_data, CB,
         return T, P, Itot, RPM
 
     return 0.0, 0.0, 0.0, 0.0
-    
+
 #%% Pareto front for Static Thrust vs Cruise Speed for selected motor, battery
 # use multiprocessing as default
 #%% OLD VERSION WITHOUT NUMBA SPEEDUP Pareto front of velocity vs static thrust for a given motor + battery and all APC propellers!
@@ -2417,3 +2418,104 @@ def plotMultiMotorMGTOWPareto(self, verbose = False, AllPareto = False):
     plt.show()
     
     return pareto_data    
+
+
+#%% modelcalcs for mission simulations (where you use a cumulative Itot to get the State Of Charge)
+@njit(fastmath=True)
+def ModelCalcsExternalSOC(velocity, SOC, rpm_list, numba_prop_data, CB, 
+                          ns, Rint, KV, Rm, nmot, I0, ds):
+    '''
+    Optimized Numba-compatible version solving for T, P, Itot, RPM.
+    Implements bisection for root finding on Itot, with fallback to alternate formulation.
+    
+    since SOC was calculated externally based on the integral of the current used in the mission,
+    SOC, Vsoc are no longer variables and the system reduces to:
+        Vin = ns*Vsoc - Itot*Rint*ns
+        RPM = KV*Vin - ((KV*Rm)/nmot)*Itot
+        Q = nmot*TorqueNumba(RPM, velocity, rpm_list, numba_prop_data)
+        Itot = Q*(KV * pi/30) + I0 
+    with Vin, Itot, RPM, Q as variables!
+    '''
+    Vsoc = 3.685 - 1.031 * np.exp(-35 * SOC) + 0.2156 * SOC - 0.1178 * SOC**2 + 0.3201 * SOC**3 # fixed
+        
+    def residual_primary(Itot):
+        Vin = ns * Vsoc - Itot * Rint * ns
+        if Vin < 0:
+            return 1e10
+        RPM = KV * Vin - (KV * Rm / nmot) * Itot
+        if RPM < 0 or RPM > rpm_list[-1]:
+            return 1e10
+        Q = nmot * TorqueNumba(RPM, velocity, rpm_list, numba_prop_data)
+        Itot_calc = Q * (KV * np.pi / 30) + I0
+        return Itot - Itot_calc
+
+    # Bisection for Itot (primary formulation)
+    low = 0.0
+    high = 400.0  # Adjust as needed
+    tol = 1e-3
+    max_iter = 100
+    Itot = 100 #initial guess
+    for _ in range(max_iter):
+        mid = (low + high) / 2
+        res_mid = residual_primary(mid)
+        if abs(res_mid) < tol:
+            Itot = mid
+            break
+        if res_mid > 0:
+            high = mid
+        else:
+            low = mid
+    else:
+        # If not converged, try alternate or return zeros
+        Itot = -1.0
+        
+    if Itot > 0 and Itot > I0 * nmot:
+        # Compute values for primary case
+        Vin = ns * Vsoc - Itot * Rint * ns
+        RPM = KV * Vin - (KV * Rm / nmot) * Itot
+        Q = nmot * TorqueNumba(RPM, velocity, rpm_list, numba_prop_data)
+        T = nmot * ThrustNumba(RPM, velocity, rpm_list, numba_prop_data)
+        P = (Itot / nmot) * Vin
+        if Q <= 0 or T <= 0:
+            return 0.0, 0.0, 0.0, 0.0, 0.0
+        return T, P, Itot, RPM, Q
+    
+    # Alternate formulation (when Itot <= I0 * nmot or primary failed)
+    def residual_alt(RPM):
+        if RPM < 0 or RPM > rpm_list[-1]:
+            return 1e10
+        Q = nmot * TorqueNumba(RPM, velocity, rpm_list, numba_prop_data)
+        Itot_alt = Q * (KV * np.pi / 30) + I0
+        Vin = ns * Vsoc - Itot_alt * Rint * ns
+        Imot = Itot_alt / nmot
+        RPM_new = KV * (Vin - Imot * Rm)
+        return RPM_new - RPM
+
+    # Bisection for RPM in alternate
+    low = rpm_list[0]
+    high = rpm_list[-1]
+    RPM = -1.0
+    for _ in range(max_iter):
+        mid = (low + high) / 2
+        res_mid = residual_alt(mid)
+        if abs(res_mid) < tol:
+            RPM = mid
+            break
+        if res_mid > 0:
+            high = mid
+        else:
+            low = mid
+    else:
+        return 0.0, 0.0, 0.0, 0.0, 0.0
+    
+    if RPM > 0:
+        Q = nmot * TorqueNumba(RPM, velocity, rpm_list, numba_prop_data)
+        Itot = Q * (KV * np.pi / 30) + I0
+        Vin = ns * Vsoc - Itot * Rint * ns
+        T = nmot * ThrustNumba(RPM, velocity, rpm_list, numba_prop_data)
+        P = (Itot / nmot) * Vin
+        if Itot < 0 or T <= 0:
+            return 0.0, 0.0, 0.0, 0.0, 0.0
+        return T, P, Itot, RPM, Q
+
+    return 0.0, 0.0, 0.0, 0.0, 0.0

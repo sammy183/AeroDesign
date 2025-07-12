@@ -82,6 +82,12 @@ taper = 1.0
 
 MGTOW = 35.0*lbfN #30 lbf then converted to N 
 
+# takeoff coefs
+CDtoPreR = 0.07
+CDtoPostR = 0.3
+CLtoPreR = 0.9
+CLtoPostR = CLmax - 0.2
+
 # for the classic Cobra + 16x10E combo, the plot runtimes looks about accurate but the model calcs seems 
 # to be overpredicting the results; examine why! (also no measure of ESC/wire resistance....)
 
@@ -93,10 +99,11 @@ if __name__ == '__main__':
 # to initialize a setup:
     Design = ad.PointDesign() 
     Design.Battery('Gaoneng_8S_3300', 0.85)
-    Design.Motor('HKIV-5035-380', 1)
-    Design.Prop('5x5E')
+    Design.Motor('C-4120/30', 2)
+    Design.Prop('16x10E')
     Design.Parameters(rho, MGTOW, Sw, AR, CLmax, 
-                      CLto, CL, CD, CD0, e)
+                      CLto, CL, CD, CD0, e, 
+                      b, h0, taper, 'dry concrete')
 
 # to check setup and options:
     # Design.ViewSetup()
@@ -119,7 +126,7 @@ if __name__ == '__main__':
     # Design.ThrustCruisePareto(proplist = None, Ilimit = 105, AnnotateAll = False)
     
 # TakeoffCruisePareto plots the Pareto front of takeoff distance vs cruise velocity for a given PointDesign.
-    # Design.TakeoffCruisePareto(proplist = None, Ilimit = 105, xloflimit = 65, mufric = 0.04)
+    # Design.TakeoffCruisePareto(proplist = None, Ilimit = 105, xloflimit = 65)
 
     
 # MGTOWCruisePareto plots the pareto front of MGTOW vs cruise velocity for a given PointDesign
@@ -131,14 +138,17 @@ if __name__ == '__main__':
     # Design.MGTOWCruisePareto(motorlist = ['C-4120/30', 'A-5025-310', 'HKII-4525-370'], nmots = [2, 1, 1], 
     #                          proplist = ['10x55MR','16x10E', '18x12E', '14x14', '12x12', '15x10E', '16x16', '20x10E'],
     #                          # lb = 10.0, ub = 25.0,
-    #                          Ilimit = 105, xloflimit = 60, mufric = 0.04,
+    #                          Ilimit = 105, xloflimit = 60,
     #                          SkipInvalid = False, AllPareto = False)
     # e = time.perf_counter()
     # print(f'Time Taken: {e-s:.2f}s')
 
 # example that runs all motors + nmots:    
-    # Design.MGTOWCruisePareto(motorlist = 'all', Ilimit = 105, xloflimit = 60, mufric = 0.04,
+    # Design.MGTOWCruisePareto(motorlist = 'all', Ilimit = 105, xloflimit = 60,
     #                          SkipInvalid = True, AllPareto = False)
 
 #%% performance funcs
     # Design.DetailedTakeoff(b, h0, taper, plot = True)
+    
+    Design.PrepMissionSim(CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR) 
+    Design.DBF_ThreeLaps()

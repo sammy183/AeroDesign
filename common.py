@@ -119,9 +119,10 @@ class PointDesign:
         self.prop_name = prop_name
         self.PROP_DATA, self.NUMBA_PROP_DATA = propulsions.parse_propeller_data(prop_name)
         self.RPM_VALUES, self.THRUST_POLYS, self.TORQUE_POLYS, self.V_DOMAINS  = propulsions.initialize_RPM_polynomials(self.PROP_DATA)
+        self.rpm_list = np.array(self.RPM_VALUES)
         self.prop = True
         
-    def Parameters(self, rho, MGTOW, Sw, AR, CLmax, CLto, CL, CD, CD0, e):
+    def Parameters(self, rho, MGTOW, Sw, AR, CLmax, CLto, CL, CD, CD0, e, b, h0, taper, takeoff_surface):
         '''
         rho     air density (kg/m^3)
         MGTOW   aircraft gross weight in N
@@ -150,6 +151,27 @@ class PointDesign:
         self.MGTOW = MGTOW
         Vstall = np.sqrt((2*self.MGTOW)/(self.rho*self.Sw*self.CLmax))
         self.Vlof = 1.15 * Vstall  # Safety factor of 1.15 (raymer says at least 1.1)
+        
+        self.b = b          # wingspan (m)
+        self.h0 = h0        # height from FRL to ground (m) when on the ground
+        self.taper = taper  # taper ratio where 1.0 is rectangle!
+        
+        if takeoff_surface == 'dry concrete':
+            self.mufric = 0.04
+        elif takeoff_surface == 'wet concrete':
+            self.mufric = 0.05
+        elif takeoff_surface == 'icy concrete':
+            self.mufric = 0.02
+        elif takeoff_surface == 'hard turf':
+            self.mufric = 0.05
+        elif takeoff_surface == 'firm dirt':
+            self.mufric = 0.04
+        elif takeoff_surface == 'soft turf':
+            self.mufric = 0.07
+        elif takeoff_surface == 'wet grass':
+            self.mufric = 0.08
+        else:
+            print('\nTakeoff surface not recognized\nOptions are: dry concrete, wet concrete, icy concrete\n\t\t\thard turf, firm dirt, soft turf, wet grass')
         self.parameters = True
                 
     def ViewSetup(self):
@@ -236,7 +258,7 @@ class PointDesign:
             propulsions.PlotTCPareto_mp(self, verbose = verbose)
         
     def TakeoffCruisePareto(self, proplist = None, lb = 0.0, ub = 1000.0,
-                            Ilimit = 100, xloflimit = 150, mufric = 0.04,
+                            Ilimit = 100, xloflimit = 150,
                             verbose = False, AnnotateAll = False):
         '''
         xloflimit in ft, Ilimit in A, mufric as takeoff friction coef
@@ -250,12 +272,11 @@ class PointDesign:
             self.AnnotateAll = AnnotateAll
             self.proplist = proplist
             self.xloflimit = xloflimit
-            self.mufric = mufric
             propulsions.plotTakeoffParetoFrontNumba(self, verbose = verbose)
         
     def MGTOWCruisePareto(self, motorlist = None, nmots = None, proplist = None, 
                           lb = 0.0, ub = 1000.0, Ilimit = 100, xloflimit = 150, 
-                          mufric = 0.04, AnnotateAll = False, SkipInvalid = False, 
+                          AnnotateAll = False, SkipInvalid = False, 
                           AllPareto = False):
         '''
         xloflimit in ft, Ilimit in A, mufric as takeoff friction coef
@@ -270,7 +291,6 @@ class PointDesign:
             self.lb = lb 
             self.ub = ub
             self.xloflimit = xloflimit
-            self.mufric = mufric
             self.AnnotateAll = AnnotateAll
             self.SkipInvalid = SkipInvalid
             
@@ -304,25 +324,218 @@ class PointDesign:
         print(propulsions.VmaxLean(self, 0.0, t_in = 0.0, Tlimit = True))
         
     def testMGTOW(self):
-        self.mufric = 0.04
         self.xloflimit = 60
         self.Ilimit = 105
         print(propulsions.MGTOWinnerfunc_fast(self, 30.0))
 
         
     # performance functions
-    def DetailedTakeoff(self, b, h0, taper, mufric = 0.04, plot = True):
+    def DetailedTakeoff(self, plot = True):
         '''
         b is wingspan in m
         h0 is height from fuselage centerline to ground (before takeoff)
         taper is the taper ratio'''
         if self.CheckVariables():
-            self.h0 = h0 
-            self.b = b
-            self.taper = taper
-            self.mufric = mufric
             performance.SimulateTakeoff(self, plot = plot, results = True)
+    
+    def PrepMissionSim(self, CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR):
+        print('\nMission Simulation Initialized!')
+        
+        # acceleration, velocity, position, time
+        self.a_track = []
+        self.V_track = []
+        self.x_track = []
+        self.t_track = []
+        
+        # forces
+        self.T_track = []
+        self.D_track = []
+        
+        # propulsion data
+        self.SOC_track = []
+        self.Itot_track = []
+        self.RPM_track = []
+        self.Q_track = []
+        self.P_track = []
+        
+        self.datatrack = [self.a_track, 
+                        self.V_track,
+                        self.x_track,
+                        self.t_track,
+                        self.T_track,
+                        self.D_track,
+                        self.SOC_track,
+                        self.Itot_track,
+                        self.RPM_track,
+                        self.Q_track,
+                        self.P_track]
+        
+        self.mass = self.MGTOW/9.81 
+        
+        self.CDtoPreR = CDtoPreR # drag coef for takeoff pre-rotation (so 0 aoa with high lift devices)
+        self.CDtoPostR = CDtoPostR # drag coef for takeoff post-rotation (so ~10 deg aoa with high lift devices)
+        self.CLtoPreR = CLtoPreR
+        self.CLtoPostR = CLtoPostR
+        
+        #velocity for stall and lof are already implemented!
+    
+    def updatedata(self, newdata):
+        '''
+        All data from the takeoff, cruise, climb, turn functions is in the format:
+            avalues, Vvalues, xvalues, tvalues, Tvalues, Dvalues, SOCvalues, Itotvalues, RPMvalues,
+            Qvalues, Pvalues (note: P is per motor!)'''
+        for i in range(len(self.datatrack)):
+            self.datatrack[i].append(newdata[i])
             
+    def DBF_Lap(self):
+        '''
+        
+        Typical DBF lap: 
+        500 ft straight, 180 deg turn, 500 ft straight (or less or more!), 360 deg turn, 500 ft straight, 180 deg turn, 500 ft straight 
+        (and you're back over the start line!)
+         
+        First lap is slightly different bc you don't have the initial 500 ft straight, you go straight from the climb to the turn typically
+        
+        '''
+        
+        texpect = 100
+        segment_distance = 500*ftm # 200 ft converted to m
+        self.segment_index += 1
+        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+        self.updatedata(data)
+        
+        # 180 turn (IMPLEMENT)
+        
+        segment_distance = 500*ftm # 200 ft converted to m
+        self.segment_index += 1
+        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+        self.updatedata(data)
+        
+        # 360 turn
+        
+        segment_distance = 500*ftm # 200 ft converted to m
+        self.segment_index += 1
+        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+        self.updatedata(data)
+
+        # 180 turn
+        
+        segment_distance = 500*ftm # 200 ft converted to m
+        self.segment_index += 1
+        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+        self.updatedata(data)
+        
+        # lap end
+    
+    def DBF_ThreeLaps(self, aoa_rotation = 10, climb_altitude = 100*ftm):
+        #### NOTE: FIND A BETTER WAY TO ANTICIPATE THE END OF THE SEGMENT (so it'll work beyond dbf!!!)
+        
+        print(f'\nSimulating Takeoff with {aoa_rotation} deg of rotation') # print statements here bc f-strings haven't been implemented in numba yet!
+        texpect = 50
+        self.segment_index = 0
+        data = performance.Takeoff(aoa_rotation, texpect, self.h0, self.taper, self.AR, self.b, self.MGTOW, self.rho, self.Sw, 
+                       self.CDtoPreR, self.CLtoPreR, self.CDtoPostR, self.CLtoPostR, self.CLmax,  
+                       self.mass, self.mufric, self.Vlof, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, 
+                       self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds, n = 1000, plot = False, results = False)
+        self.updatedata(data)
+        
+        # print(f'Simulating Climb to {climb_altitude/ftm} ft') 
+        ########## IMPLEMENT THIS FUNCTION ################
+        # (NOTE: then you have to go forward 500 ft combined horizontally so maybe add a super short cruise segment)
+        
+        
+        # print('Simulating 180 deg turn')
+        ########## IMPLEMENT THIS FUNCTION ################
+        
+        texpect = 50
+        segment_distance = 500*ftm # 200 ft converted to m
+        self.segment_index += 1
+        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+        self.updatedata(data)
+
+        # print('Simulating 360 deg turn')
+        ########## IMPLEMENT THIS FUNCTION ################
+
+        texpect = 50
+        segment_distance = 500*ftm # 200 ft converted to m
+        self.segment_index += 1
+        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+        self.updatedata(data)
+        
+        # print('Simulating 180 deg turn')
+        
+        
+        texpect = 50
+        segment_distance = 1000*ftm # 200 ft converted to m
+        self.segment_index += 1
+        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+        self.updatedata(data)
+        
+        
+        # for now this is just 4 cruise segments
+        self.DBF_Lap()
+
+
+        labels = ['Takeoff', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 1000 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft']
+
+        plt.figure(figsize=(6,4), dpi = 1000)
+        for i in range(self.segment_index+1):
+            plt.plot(self.t_track[i], self.V_track[i]/ftm, label = labels[i])
+        plt.legend()
+        plt.title('velocity plot (fps)')
+        plt.show() 
+        
+        
+        # plt.figure(figsize=(6,4), dpi = 1000)
+        # plt.plot(self.t_track[0], self.D_track[0]/lbfN, label = 'Drag, Takeoff')
+        # plt.plot(self.t_track[1], self.D_track[1]/lbfN, label = 'Drag, Cruise')
+        # plt.plot(self.t_track[0], self.T_track[0]/lbfN, label = 'Thrust, Takeoff')
+        # plt.plot(self.t_track[1], self.T_track[1]/lbfN, label = 'Thrust, Cruise')
+        # plt.legend()
+        # plt.title('Forces')
+        # plt.show() 
+        
+        plt.figure(figsize=(6,4), dpi = 1000)
+        for i in range(self.segment_index+1):
+            plt.plot(self.t_track[i], self.SOC_track[i]*100, label = labels[i])
+        plt.legend()
+        plt.title('SOC')
+        plt.show() 
+        
+        plt.figure(figsize=(6,4), dpi = 1000)
+        for i in range(self.segment_index+1):
+            plt.plot(self.t_track[i], self.Itot_track[i], label = labels[i])
+        plt.legend()
+        plt.title('Current (Itot)')
+        plt.show() 
+        
+        plt.figure(figsize=(6,4), dpi = 1000)
+        for i in range(self.segment_index+1):
+            plt.plot(self.t_track[i], self.x_track[i]/ftm, label = labels[i])
+        plt.legend()
+        plt.title('Distance (ft)')
+        plt.show() 
         
     
             
