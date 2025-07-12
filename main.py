@@ -73,6 +73,7 @@ CL = 0.4
 CLto = 0.9
 CD = 0.045
 CD0 = 0.03
+# CD = 0.025
 e = 0.8
 AR = 4.0 
 
@@ -80,7 +81,8 @@ b = 6.0*ftm
 h0 = 1.778 #m
 taper = 1.0
 
-MGTOW = 35.0*lbfN #30 lbf then converted to N 
+# MGTOW = 35.0*lbfN #30 lbf then converted to N 
+MGTOW = 20*lbfN
 
 # takeoff coefs
 CDtoPreR = 0.07
@@ -90,6 +92,8 @@ CLtoPostR = CLmax - 0.2
 
 CL10 = 1.7221 # with flaps!!
 CD10 = 0.173191721
+# CL10 = 1.1 
+# CD10 = 0.09
 # for the classic Cobra + 16x10E combo, the plot runtimes looks about accurate but the model calcs seems 
 # to be overpredicting the results; examine why! (also no measure of ESC/wire resistance....)
 
@@ -100,9 +104,9 @@ if __name__ == '__main__':
 
 # to initialize a setup:
     Design = ad.PointDesign() 
-    Design.Battery('Gaoneng_8S_3300', 0.85)
+    Design.Battery('Gaoneng_8S_3300', 0.99)
     Design.Motor('Lightning 4535-460KV', 1)
-    Design.Prop('12x12E')
+    Design.Prop('18x12E')
     Design.Parameters(rho, MGTOW, Sw, AR, CLmax, 
                       CLto, CL, CD, CD0, e, 
                       b, h0, taper, 'dry concrete')
@@ -154,6 +158,8 @@ if __name__ == '__main__':
     
     Design.PrepMissionSim(CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR, 
                           CD10, CL10) 
+    
+    # currently breaks with 12x12E and cobra motors, figure out why
     Design.DBF_ThreeLaps(aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10, plot = False)
     # main important ones
     Design.PlotThreeLap('Velocity')
@@ -161,11 +167,11 @@ if __name__ == '__main__':
     Design.PlotThreeLap('Current')
     
     # others useful for diagnostics!
-    # Design.PlotThreeLap('Acceleration')
-    # Design.PlotThreeLap('Position')
-    # Design.PlotThreeLap('Altitude')
-    # Design.PlotThreeLap('Thrust')
-    # Design.PlotThreeLap('Load Factor')
-    # Design.PlotThreeLap('RPM')
-    # Design.PlotThreeLap('Torque')
-    # Design.PlotThreeLap('Power')
+    Design.PlotThreeLap('Acceleration')
+    Design.PlotThreeLap('Position')
+    Design.PlotThreeLap('Altitude')
+    Design.PlotThreeLap('Thrust')
+    Design.PlotThreeLap('Load Factor')
+    Design.PlotThreeLap('RPM')
+    Design.PlotThreeLap('Torque')
+    Design.PlotThreeLap('Power')
