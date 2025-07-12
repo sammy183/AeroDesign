@@ -523,6 +523,9 @@ def Cruise(segment_distance, V_initial, t_initial, SOC_initial, x_initial, h_ini
     # propulsions.ModelCalcs(self, V[i], t)
     # what if I want to account for changing Itot???
     # realistically I should aim to use RK45 or something 
+    # need to handle an error where the input SOC is < 1-ds already!
+    # print(SOC_initial)
+    # print(SOC[0])
     for i, t in enumerate(ts):
         if SOC[i] < (1-ds):
             endindex = i

@@ -385,11 +385,48 @@ class PointDesign:
         self.CDturn = CDturn
         
         self.segment_index = 0
+        self.labels = []
         
         self.CheckVariables()
         #velocity for stall and lof are already implemented!
-        
     
+    def resetdata(self):
+        # acceleration, velocity, position, altitude, time
+        self.a_track = []
+        self.V_track = []
+        self.x_track = []
+        self.h_track = []
+        self.t_track = []
+        
+        # forces
+        self.T_track = []
+        self.D_track = []
+        self.n_track = []
+        
+        # propulsion data
+        self.SOC_track = []
+        self.Itot_track = []
+        self.RPM_track = []
+        self.Q_track = []
+        self.P_track = []
+        
+        self.datatrack = [self.a_track, 
+                        self.V_track,
+                        self.x_track,
+                        self.h_track,
+                        self.t_track,
+                        self.T_track,
+                        self.D_track,
+                        self.n_track,       #load factor
+                        self.SOC_track,
+                        self.Itot_track,
+                        self.RPM_track,
+                        self.P_track,
+                        self.Q_track]
+        self.segment_index = 0 
+        self.labels = []
+        self.lap_ends = []
+        
     def updatedata(self, newdata):
         '''
         All data from the takeoff, cruise, climb, turn functions is in the format:
@@ -408,8 +445,9 @@ class PointDesign:
         First lap is slightly different bc you don't have the initial 500 ft straight, you go straight from the climb to the turn typically
         
         '''
+                
         # 500 ft cruise
-        texpect = 150
+        texpect = 300
         m = 5000
         segment_distance = 500*ftm # 200 ft converted to m
         self.segment_index += 1
@@ -481,9 +519,14 @@ class PointDesign:
         self.segment_index += 1
         if verbose:
             print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
+        # print(self.segment_index, segment_distance)
+        # print(self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1])
+        # print(self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1])
         data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
                                   self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+        # if len(data[8]) == 0:
+        #     print(data)
         self.updatedata(data)
         self.labels.append('500 ft cruise')
         
@@ -491,16 +534,14 @@ class PointDesign:
     
     def DBF_ThreeLaps(self, aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10, plot = False):
         #### NOTE: FIND A BETTER WAY TO ANTICIPATE THE END OF THE SEGMENT (so it'll work beyond dbf!!!)
+        self.resetdata()
+        self.segment_index = 0 
         self.labels = []
-        self.tlap1end = 0.0
-        self.tlap2end = 0.0
-        self.tlap3end = 0.0
-        self.segment_index = 0
         texpect = 150
         m = 5000
 
         ############# TAKEOFF AND CLIMB TO FIRST TURN #############
-        print(f'\nSimulating Takeoff with {aoa_rotation} deg of rotation') # print statements here bc f-strings haven't been implemented in numba yet!
+        print(f'\nTakeoff with {aoa_rotation} deg of rotation') # print statements here bc f-strings haven't been implemented in numba yet!
         data = performance.Takeoff(aoa_rotation, texpect, self.h0, self.taper, self.AR, self.b, self.MGTOW, self.rho, self.Sw, 
                        self.CDtoPreR, self.CLtoPreR, self.CDtoPostR, self.CLtoPostR, self.CLmax,  
                        self.mass, self.mufric, self.Vlof, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, 
@@ -508,7 +549,7 @@ class PointDesign:
         self.updatedata(data)
         self.labels.append('Takeoff')
         
-        print(f'Simulating Climb to {climb_altitude/ftm} ft') 
+        print(f'Climb to {climb_altitude/ftm} ft') 
         max_segment_distance = 500*ftm # total distance allowable (climb may be cut short)
         self.segment_index += 1
         data = performance.Climb(climb_altitude, climb_angle, max_segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
@@ -614,6 +655,8 @@ class PointDesign:
         Vs = np.concatenate(self.V_track)
         self.maxV = Vs.max()/ftm 
         
+        self.lap_ends = [self.tlap1end, self.tlap2end, self.tlap3end]
+        
         self.turnindexes = []
         self.cruiseindexes = []
         for i, label in enumerate(self.labels):
@@ -642,8 +685,8 @@ class PointDesign:
                     ax.plot(self.t_track[i], self.V_track[i]/ftm, color = '#666666', linewidth = lw)
             # ax.plot(M2_t, M2_V/ftm, color='black')
             #for the legend
-            ax.plot([], [], color='#cc0000', label='Turn')
-            ax.plot([], [], color='#666666', label='Cruise')
+            ax.plot([], [], color='#cc0000', label='Cruise')
+            ax.plot([], [], color='#666666', label='Turn')
             
             #laptime labels
             ax.text(self.tlap1end-2.5, 40, f'Lap 1: {self.tlap1end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
@@ -659,8 +702,145 @@ class PointDesign:
             plt.legend(loc='lower center', prop={'size': 9}, framealpha=1.0, fancybox = False, edgecolor='black', ncol=4, bbox_to_anchor = (0.5, -0.65))
             # fig.savefig('M2VelocityProfile_4_7_V13', dpi=800, bbox_inches="tight", pad_inches=0.05)
             plt.show()
+            
     
-    def PlotThreeLap(self, char, title = None):
+    def DBF_MaxLaps(self, aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10, time_limit = 300):
+        ''' 
+        Determines the maximum number of laps provided max discharge and a set time limit
+        
+        Intended for DBF #lap based simulations
+        
+        NOTE: MGTOW IMPACTS RUNTIME SIGNIFICANTLY!!! (Unsure why!)
+        '''
+        self.resetdata()
+        texpect = 150
+        m = 5000
+
+        ############# TAKEOFF AND CLIMB TO FIRST TURN #############
+        print(f'\nSimulating Takeoff with {aoa_rotation} deg of rotation') # print statements here bc f-strings haven't been implemented in numba yet!
+        data = performance.Takeoff(aoa_rotation, texpect, self.h0, self.taper, self.AR, self.b, self.MGTOW, self.rho, self.Sw, 
+                       self.CDtoPreR, self.CLtoPreR, self.CDtoPostR, self.CLtoPostR, self.CLmax,  
+                       self.mass, self.mufric, self.Vlof, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, 
+                       self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds, m = m, plot = False, results = False)
+        self.updatedata(data)
+        self.labels.append('Takeoff')
+        
+        print(f'Simulating Climb to {climb_altitude/ftm} ft') 
+        max_segment_distance = 500*ftm # total distance allowable (climb may be cut short)
+        self.segment_index += 1
+        data = performance.Climb(climb_altitude, climb_angle, max_segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+        self.updatedata(data)
+        self.labels.append('Climb')
+        
+        # remaining horizontal distance if end of lap isn't reached
+        if self.x_track[-1][-1] < 500*ftm:
+            segment_distance = 500*ftm - self.x_track[-1][-1] # total distance allowable (climb may be cut short)
+            print(f'Cruise to Turn 1, {segment_distance/ftm:.1f} ft')
+            self.segment_index += 1
+            data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                      self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                      self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+            self.updatedata(data)
+            self.labels.append('Cruise to first turn')
+        
+        
+        ############# LAP 1 START #############
+        print('Running Lap 1')
+        # 180 deg turn
+        segment_degrees = 180
+        self.segment_index += 1
+        # print(f'Simulating {segment_degrees} deg turn')
+        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+        self.updatedata(data)
+        self.labels.append('180 deg turn')
+        
+        # 500 ft cruise 
+        segment_distance = 500*ftm # 500 ft converted to m
+        self.segment_index += 1
+        # print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+        self.updatedata(data)
+        self.labels.append('500 ft cruise')
+        
+        # 360 deg turn
+        segment_degrees = 360
+        self.segment_index += 1
+        # print(f'Simulating {segment_degrees} deg turn')
+        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+        self.updatedata(data)
+        self.labels.append('360 deg turn')
+        
+        # 500 ft straight
+        segment_distance = 500*ftm # 200 ft converted to m
+        self.segment_index += 1
+        # print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+        self.updatedata(data)
+        self.labels.append('500 ft cruise')
+        
+        # 180 deg turn
+        segment_degrees = 180
+        self.segment_index += 1
+        # print(f'Simulating {segment_degrees} deg turn')
+        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+        self.updatedata(data)        
+        self.labels.append('180 deg turn')
+        
+        # 500 ft cruise then we start Lap 2
+        segment_distance = 500*ftm # 200 ft converted to m
+        self.segment_index += 1
+        # print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+        self.updatedata(data)
+        self.labels.append('500 ft cruise')
+        
+        self.lap_ends.append(self.t_track[-1][-1]) # lap one recording
+        time_remaining = time_limit - self.lap_ends[0]
+        
+        i = 2
+        while time_remaining > 0:    
+            print(f'Running Lap {i}')
+            self.DBF_Lap()
+            if self.SOC_track[-1][-1]-0.005 <= (1 - self.ds):
+                print('Battery Runtime Exceeded!')
+                break
+
+            self.lap_ends.append(self.t_track[-1][-1])
+            time_remaining = time_limit - self.lap_ends[-1]
+            i += 1
+            
+        if time_remaining < 0:
+            self.lap_ends = self.lap_ends[:-1] # cut the last segment bc it goes over the time limit!
+            self.labels = self.labels[:-1]
+            self.mission_success = True
+        print(f'\n{"Total number of laps:":25} {len(self.lap_ends):.0f}\n'
+              f'{"End Mission Time:":25} {self.lap_ends[-1]:.2f}s\n'
+              f'{"Final Laptime:":25} {self.lap_ends[-1]-self.lap_ends[-2]:.2f}s')
+            
+        self.turnindexes = []
+        self.cruiseindexes = []
+        for i, label in enumerate(self.labels):
+            if "turn" in label:
+                self.turnindexes.append(i)
+            elif "cruise" in label:
+                self.cruiseindexes.append(i)
+        
+    
+    def PlotMission(self, char, title = None):
         '''
         generalized plot that will plot any characteristic from:
             -  acceleration (m/s^2 by default)
@@ -739,9 +919,10 @@ class PointDesign:
         
         lw = 1.3
         fig, ax = plt.subplots(figsize=(6,4), dpi = 1000)
-        ax.plot([self.tlap1end, self.tlap1end], [0, maxVar*conversion*(6/5)], '--', color='orange', linewidth=1)
-        ax.plot([self.tlap2end, self.tlap2end], [0, maxVar*conversion*(6/5)], '--', color='orange', linewidth=1)
-        ax.plot([self.tlap3end, self.tlap3end], [0, maxVar*conversion*(6/5)], '--', color='orange', linewidth=1)
+        
+        for i, lapend in enumerate(self.lap_ends):
+            ax.plot([lapend, lapend], [0, maxVar*conversion*(6/5)], '--', color='orange', linewidth=1)
+            ax.text(lapend-2.5, (maxVar*conversion)/4, f'Lap {i+1}: {lapend:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
 
         #plotting all the turn and cruise segments
         if special: # special is for the thrust - drag or any other multiplot!
@@ -758,10 +939,10 @@ class PointDesign:
                     ax.plot(self.t_track[i], var1[i]*conversion, color = '#666666', linewidth = lw)
                     ax.plot(self.t_track[i], var2[i]*conversion, color = 'pink', linewidth = lw)
             #for the legend
-            ax.plot([], [], color='#cc0000', label='Turn Thrust')
-            ax.plot([], [], color='#666666', label='Cruise Thrust')
-            ax.plot([], [], color='cyan', label='Turn Drag')
-            ax.plot([], [], color='pink', label='Cruise Drag')
+            ax.plot([], [], color='#cc0000', label='Cruise Thrust')
+            ax.plot([], [], color='#666666', label='Turn Thrust')
+            ax.plot([], [], color='cyan', label='Cruise Drag')
+            ax.plot([], [], color='pink', label='Turn Drag')
 
         else:
             ax.plot(self.t_track[0], var[0]*conversion, color='black', label='Takeoff', linewidth = lw)
@@ -773,30 +954,34 @@ class PointDesign:
                 elif i in self.turnindexes:
                     ax.plot(self.t_track[i], var[i]*conversion, color = '#666666', linewidth = lw)
                     
-            ax.plot([], [], color='#cc0000', label='Turn')
-            ax.plot([], [], color='#666666', label='Cruise')
+            ax.plot([], [], color='#cc0000', label='Cruise')
+            ax.plot([], [], color='#666666', label='Turn')
             
         #laptime labels
-        ax.text(self.tlap1end-2.5, (maxVar*conversion)/4, f'Lap 1: {self.tlap1end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
-        ax.text(self.tlap2end-2.5, (maxVar*conversion)/4, f'Lap 2: {self.tlap2end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
-        ax.text(self.tlap3end-2.5, (maxVar*conversion)/4, f'Lap 3: {self.tlap3end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
         ax.set_ylim(bottom=0, top = maxVar*conversion*(6/5))
-        ax.set_xlim(left=0, right = self.tlap3end + 2)
+        ax.set_xlim(left=0, right = self.lap_ends[-1] + 2)
         # plt.yticks([0, 20, 40, 60, 80, 100, 120, 140, 160])
         plt.xlabel('Time (s)')
         if special:
             plt.ylabel('Forces (lbf)')
             if title == None:
-                plt.title(f'Three Lap Force Profile')
+                plt.title('Force Profile')
             else:
                 plt.title(title)
         else:
             plt.ylabel(f'{char} ({units})')
             if title == None:
-                plt.title(f'Three Lap {char} Profile')
+                plt.title(f'{char} Profile')
             else:
                 plt.title(title)
         plt.grid()
         plt.legend(loc='lower center', prop={'size': 9}, framealpha=1.0, fancybox = False, edgecolor='black', ncol=4, bbox_to_anchor = (0.5, -0.3))
         # fig.savefig('M2VelocityProfile_4_7_V13', dpi=800, bbox_inches="tight", pad_inches=0.05)
         plt.show()
+        
+        
+        
+        
+        
+        
+        

@@ -69,11 +69,10 @@ start = time.perf_counter()
 rho = 1.12
 Sw = 9.0*ftm*ftm #9.0 ft2 then converted to M
 CLmax = 1.6
-CL = 0.4
+CL = 0.44
 CLto = 0.9
 CD = 0.045
 CD0 = 0.03
-# CD = 0.025
 e = 0.8
 AR = 4.0 
 
@@ -82,16 +81,18 @@ h0 = 1.778 #m
 taper = 1.0
 
 # MGTOW = 35.0*lbfN #30 lbf then converted to N 
-MGTOW = 20*lbfN
+MGTOW = 15*lbfN
 
 # takeoff coefs
 CDtoPreR = 0.07
 CDtoPostR = 0.3
 CLtoPreR = 0.9
-CLtoPostR = CLmax - 0.2
+CLtoPostR = 1.7
 
 CL10 = 1.7221 # with flaps!!
 CD10 = 0.173191721
+
+# theoretical without flaps
 # CL10 = 1.1 
 # CD10 = 0.09
 # for the classic Cobra + 16x10E combo, the plot runtimes looks about accurate but the model calcs seems 
@@ -104,9 +105,9 @@ if __name__ == '__main__':
 
 # to initialize a setup:
     Design = ad.PointDesign() 
-    Design.Battery('Gaoneng_8S_3300', 0.99)
-    Design.Motor('Lightning 4535-460KV', 1)
-    Design.Prop('18x12E')
+    Design.Battery('Gaoneng_8S_3300', 0.85)
+    Design.Motor('C-4120/30', 2)
+    Design.Prop('14x14')
     Design.Parameters(rho, MGTOW, Sw, AR, CLmax, 
                       CLto, CL, CD, CD0, e, 
                       b, h0, taper, 'dry concrete')
@@ -121,7 +122,7 @@ if __name__ == '__main__':
     
 # Runtimes plots the runtime for a specified design vs the freestream velocity. 
 # The input number, n determines the number of iterations (more n --> nicer plot and more accurate but increased computational time)
-    # Design.Runtimes(50, verbose=False)
+    Design.Runtimes(100, verbose=False)
     
 # PointDesignData plots the thrust, RPM, current, and electric power for freestream velocity vs battery runtime
     # Design.PointDesignData(200, Ilimit = 100, grade = 15)
@@ -154,24 +155,30 @@ if __name__ == '__main__':
     #                          SkipInvalid = True, AllPareto = False)
 
 #%% performance funcs
-    # Design.DetailedTakeoff(b, h0, taper, plot = True)
+    # Design.DetailedTakeoff(plot = True)
     
     Design.PrepMissionSim(CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR, 
                           CD10, CL10) 
     
-    # currently breaks with 12x12E and cobra motors, figure out why
-    Design.DBF_ThreeLaps(aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10, plot = False)
+    # Design.DBF_ThreeLaps(aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10, plot = False)
+    # Design.PlotMission('Velocity')
+    # Design.PlotMission('SOC')
+    # Design.PlotMission('Current')
+
+    Design.DBF_MaxLaps(time_limit = 300, aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10)
     # main important ones
-    Design.PlotThreeLap('Velocity')
-    Design.PlotThreeLap('SOC')
-    Design.PlotThreeLap('Current')
+    Design.PlotMission('Velocity')
+    Design.PlotMission('SOC')
+    Design.PlotMission('Current')
     
     # others useful for diagnostics!
-    Design.PlotThreeLap('Acceleration')
-    Design.PlotThreeLap('Position')
-    Design.PlotThreeLap('Altitude')
-    Design.PlotThreeLap('Thrust')
-    Design.PlotThreeLap('Load Factor')
-    Design.PlotThreeLap('RPM')
-    Design.PlotThreeLap('Torque')
-    Design.PlotThreeLap('Power')
+    # Design.PlotMission('Acceleration')
+    # Design.PlotMission('Position')
+    # Design.PlotMission('Altitude')
+    # Design.PlotMission('Thrust')
+    # Design.PlotMission('Load Factor')
+    # Design.PlotMission('RPM')
+    # Design.PlotMission('Torque')
+    # Design.PlotMission('Power')
+
+

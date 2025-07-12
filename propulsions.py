@@ -2359,7 +2359,6 @@ def plotMultiMotorMGTOWPareto(self, verbose = False, AllPareto = False):
                     max_MGTOW = MGTOW
                     max_cruise = cruise_speed
         
-        colors = colormap(np.linspace(0, 1, len(cumulative_pareto_data)))
         cumulative_pareto_data.sort(key = lambda x: x[0][1], reverse=True) # re-sorts by cruise speed, but accurately this time because the data is packaged better
         # prune cumulative_pareto_data at the end ig??? To get rid of the ones that really aren't good. Feels VERY inefficient tho
         max_MGTOW = float(0.0)
@@ -2370,6 +2369,7 @@ def plotMultiMotorMGTOWPareto(self, verbose = False, AllPareto = False):
                 final_pareto_data.append([propdata, motorname, nmot])
                 max_MGTOW = MGTOW
                 
+        colors = colormap(np.linspace(0, 1, len(final_pareto_data)))
         # gather overall data
         pareto_cruise = [p[0][1] for p in final_pareto_data]
         pareto_takeoff = [p[0][2] for p in final_pareto_data]
