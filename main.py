@@ -88,6 +88,8 @@ CDtoPostR = 0.3
 CLtoPreR = 0.9
 CLtoPostR = CLmax - 0.2
 
+CL10 = 1.7221 # with flaps!!
+CD10 = 0.173191721
 # for the classic Cobra + 16x10E combo, the plot runtimes looks about accurate but the model calcs seems 
 # to be overpredicting the results; examine why! (also no measure of ESC/wire resistance....)
 
@@ -99,8 +101,8 @@ if __name__ == '__main__':
 # to initialize a setup:
     Design = ad.PointDesign() 
     Design.Battery('Gaoneng_8S_3300', 0.85)
-    Design.Motor('C-4120/30', 2)
-    Design.Prop('16x10E')
+    Design.Motor('Lightning 4535-460KV', 1)
+    Design.Prop('12x12E')
     Design.Parameters(rho, MGTOW, Sw, AR, CLmax, 
                       CLto, CL, CD, CD0, e, 
                       b, h0, taper, 'dry concrete')
@@ -150,5 +152,20 @@ if __name__ == '__main__':
 #%% performance funcs
     # Design.DetailedTakeoff(b, h0, taper, plot = True)
     
-    Design.PrepMissionSim(CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR) 
-    Design.DBF_ThreeLaps()
+    Design.PrepMissionSim(CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR, 
+                          CD10, CL10) 
+    Design.DBF_ThreeLaps(aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10, plot = False)
+    # main important ones
+    Design.PlotThreeLap('Velocity')
+    Design.PlotThreeLap('SOC')
+    Design.PlotThreeLap('Current')
+    
+    # others useful for diagnostics!
+    # Design.PlotThreeLap('Acceleration')
+    # Design.PlotThreeLap('Position')
+    # Design.PlotThreeLap('Altitude')
+    # Design.PlotThreeLap('Thrust')
+    # Design.PlotThreeLap('Load Factor')
+    # Design.PlotThreeLap('RPM')
+    # Design.PlotThreeLap('Torque')
+    # Design.PlotThreeLap('Power')

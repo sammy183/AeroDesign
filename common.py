@@ -329,7 +329,7 @@ class PointDesign:
         print(propulsions.MGTOWinnerfunc_fast(self, 30.0))
 
         
-    # performance functions
+    ############## PERFORMANCE FUNCTIONS ##############
     def DetailedTakeoff(self, plot = True):
         '''
         b is wingspan in m
@@ -338,18 +338,20 @@ class PointDesign:
         if self.CheckVariables():
             performance.SimulateTakeoff(self, plot = plot, results = True)
     
-    def PrepMissionSim(self, CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR):
+    def PrepMissionSim(self, CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR, CDturn, CLturn):
         print('\nMission Simulation Initialized!')
         
-        # acceleration, velocity, position, time
+        # acceleration, velocity, position, altitude, time
         self.a_track = []
         self.V_track = []
         self.x_track = []
+        self.h_track = []
         self.t_track = []
         
         # forces
         self.T_track = []
         self.D_track = []
+        self.n_track = []
         
         # propulsion data
         self.SOC_track = []
@@ -361,14 +363,16 @@ class PointDesign:
         self.datatrack = [self.a_track, 
                         self.V_track,
                         self.x_track,
+                        self.h_track,
                         self.t_track,
                         self.T_track,
                         self.D_track,
+                        self.n_track,       #load factor
                         self.SOC_track,
                         self.Itot_track,
                         self.RPM_track,
-                        self.Q_track,
-                        self.P_track]
+                        self.P_track,
+                        self.Q_track]
         
         self.mass = self.MGTOW/9.81 
         
@@ -377,7 +381,13 @@ class PointDesign:
         self.CLtoPreR = CLtoPreR
         self.CLtoPostR = CLtoPostR
         
+        self.CLturn = CLturn
+        self.CDturn = CDturn
+        
+        self.segment_index = 0
+
         #velocity for stall and lof are already implemented!
+        
     
     def updatedata(self, newdata):
         '''
@@ -387,7 +397,7 @@ class PointDesign:
         for i in range(len(self.datatrack)):
             self.datatrack[i].append(newdata[i])
             
-    def DBF_Lap(self):
+    def DBF_Lap(self, verbose = False):
         '''
         
         Typical DBF lap: 
@@ -397,147 +407,388 @@ class PointDesign:
         First lap is slightly different bc you don't have the initial 500 ft straight, you go straight from the climb to the turn typically
         
         '''
-        
+        # 500 ft cruise
         texpect = 100
         segment_distance = 500*ftm # 200 ft converted to m
         self.segment_index += 1
-        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        if verbose:
+            print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
         data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
-                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
         self.updatedata(data)
+        self.labels.append('500 ft cruise')
         
         # 180 turn (IMPLEMENT)
+        segment_degrees = 180
+        self.segment_index += 1
+        if verbose:
+            print(f'Simulating {segment_degrees} deg turn')
+        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
+        self.updatedata(data)
+        self.labels.append('180 deg turn')
         
+        # 500 ft cruise
         segment_distance = 500*ftm # 200 ft converted to m
         self.segment_index += 1
-        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        if verbose:
+            print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
         data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
-                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
         self.updatedata(data)
+        self.labels.append('500 ft cruise')
         
         # 360 turn
+        segment_degrees = 360
+        self.segment_index += 1
+        if verbose:
+            print(f'Simulating {segment_degrees} deg turn')
+        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
+        self.updatedata(data)
+        self.labels.append('360 deg turn')
         
+        # 500 ft cruise
         segment_distance = 500*ftm # 200 ft converted to m
         self.segment_index += 1
-        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        if verbose:
+            print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
         data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
-                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
         self.updatedata(data)
+        self.labels.append('500 ft cruise')
 
         # 180 turn
+        segment_degrees = 180
+        self.segment_index += 1
+        if verbose:
+            print(f'Simulating {segment_degrees} deg turn')
+        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
+        self.updatedata(data)
+        self.labels.append('180 deg turn')
         
+        # 500 ft cruise
         segment_distance = 500*ftm # 200 ft converted to m
         self.segment_index += 1
-        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        if verbose:
+            print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
         data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
-                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
         self.updatedata(data)
+        self.labels.append('500 ft cruise')
         
         # lap end
     
-    def DBF_ThreeLaps(self, aoa_rotation = 10, climb_altitude = 100*ftm):
+    def DBF_ThreeLaps(self, aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10, plot = False):
         #### NOTE: FIND A BETTER WAY TO ANTICIPATE THE END OF THE SEGMENT (so it'll work beyond dbf!!!)
-        
-        print(f'\nSimulating Takeoff with {aoa_rotation} deg of rotation') # print statements here bc f-strings haven't been implemented in numba yet!
-        texpect = 50
+        self.labels = []
+        self.tlap1end = 0.0
+        self.tlap2end = 0.0
+        self.tlap3end = 0.0
         self.segment_index = 0
+
+        ############# TAKEOFF AND CLIMB TO FIRST TURN #############
+        print(f'\nSimulating Takeoff with {aoa_rotation} deg of rotation') # print statements here bc f-strings haven't been implemented in numba yet!
+        texpect = 80
         data = performance.Takeoff(aoa_rotation, texpect, self.h0, self.taper, self.AR, self.b, self.MGTOW, self.rho, self.Sw, 
                        self.CDtoPreR, self.CLtoPreR, self.CDtoPostR, self.CLtoPostR, self.CLmax,  
                        self.mass, self.mufric, self.Vlof, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, 
-                       self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds, n = 1000, plot = False, results = False)
+                       self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds, m = 1000, plot = False, results = False)
         self.updatedata(data)
+        self.labels.append('Takeoff')
         
-        # print(f'Simulating Climb to {climb_altitude/ftm} ft') 
-        ########## IMPLEMENT THIS FUNCTION ################
-        # (NOTE: then you have to go forward 500 ft combined horizontally so maybe add a super short cruise segment)
+        print(f'Simulating Climb to {climb_altitude/ftm} ft') 
+        max_segment_distance = 500*ftm # total distance allowable (climb may be cut short)
+        self.segment_index += 1
+        data = performance.Climb(climb_altitude, climb_angle, max_segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
+        self.updatedata(data)
+        self.labels.append('Climb')
+        
+        # remaining horizontal distance if end of lap isn't reached
+        if self.x_track[-1][-1] < 500*ftm:
+            segment_distance = 500*ftm - self.x_track[-1][-1] # total distance allowable (climb may be cut short)
+            print(f'Cruise to Turn 1, {segment_distance/ftm:.1f} ft')
+            self.segment_index += 1
+            data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                      self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                      self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
+            self.updatedata(data)
+            self.labels.append('Cruise to first turn')
         
         
-        # print('Simulating 180 deg turn')
-        ########## IMPLEMENT THIS FUNCTION ################
+        ############# LAP 1 START #############
+        print('Running Lap 1')
+        # 180 deg turn
+        segment_degrees = 180
+        self.segment_index += 1
+        # print(f'Simulating {segment_degrees} deg turn')
+        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
+        self.updatedata(data)
+        self.labels.append('180 deg turn')
         
-        texpect = 50
+        # 500 ft cruise 
+        segment_distance = 500*ftm # 500 ft converted to m
+        self.segment_index += 1
+        # print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
+        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
+        self.updatedata(data)
+        self.labels.append('500 ft cruise')
+        
+        # 360 deg turn
+        segment_degrees = 360
+        self.segment_index += 1
+        # print(f'Simulating {segment_degrees} deg turn')
+        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
+        self.updatedata(data)
+        self.labels.append('360 deg turn')
+        
+        # 500 ft straight
         segment_distance = 500*ftm # 200 ft converted to m
         self.segment_index += 1
-        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        # print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
         data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
-                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
         self.updatedata(data)
-
-        # print('Simulating 360 deg turn')
-        ########## IMPLEMENT THIS FUNCTION ################
-
-        texpect = 50
+        self.labels.append('500 ft cruise')
+        
+        # 180 deg turn
+        segment_degrees = 180
+        self.segment_index += 1
+        # print(f'Simulating {segment_degrees} deg turn')
+        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
+        self.updatedata(data)        
+        self.labels.append('180 deg turn')
+        
+        # 500 ft cruise then we start Lap 2
         segment_distance = 500*ftm # 200 ft converted to m
         self.segment_index += 1
-        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
+        # print(f'Simulating {segment_distance/ftm:.1f} ft linear')
         data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
-                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = 1000)
         self.updatedata(data)
+        self.labels.append('500 ft cruise')
         
-        # print('Simulating 180 deg turn')
+        self.tlap1end = self.t_track[-1][-1]
         
-        
-        texpect = 50
-        segment_distance = 1000*ftm # 200 ft converted to m
-        self.segment_index += 1
-        print(f'Simulating {segment_distance/ftm:.1f} ft linear')
-        data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
-                                  self.KV, self.Rm, self.nmot, self.I0, tend = texpect, n = 1000)
-        self.updatedata(data)
-        
-        
-        # for now this is just 4 cruise segments
+        # ############# LAP 2 ##############
+        print('Running Lap 2')
         self.DBF_Lap()
-
-
-        labels = ['Takeoff', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 1000 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft', 'Cruise 500 ft']
-
-        plt.figure(figsize=(6,4), dpi = 1000)
-        for i in range(self.segment_index+1):
-            plt.plot(self.t_track[i], self.V_track[i]/ftm, label = labels[i])
-        plt.legend()
-        plt.title('velocity plot (fps)')
-        plt.show() 
+        self.tlap2end = self.t_track[-1][-1]
         
+        # ############# LAP 3 ##############
+        print('Running Lap 3')
+        self.DBF_Lap()
+        self.tlap3end = self.t_track[-1][-1]
         
-        # plt.figure(figsize=(6,4), dpi = 1000)
-        # plt.plot(self.t_track[0], self.D_track[0]/lbfN, label = 'Drag, Takeoff')
-        # plt.plot(self.t_track[1], self.D_track[1]/lbfN, label = 'Drag, Cruise')
-        # plt.plot(self.t_track[0], self.T_track[0]/lbfN, label = 'Thrust, Takeoff')
-        # plt.plot(self.t_track[1], self.T_track[1]/lbfN, label = 'Thrust, Cruise')
-        # plt.legend()
-        # plt.title('Forces')
-        # plt.show() 
+        if self.SOC_track[-1][-1]-0.005 <= (1 - self.ds):
+            self.mission_success = False
+            print('Battery Runtime Exceeded! Mission failed.')
+        else:
+            self.mission_success = True
+            print(f'Mission completed in {self.tlap3end:.2f}s')
         
-        plt.figure(figsize=(6,4), dpi = 1000)
-        for i in range(self.segment_index+1):
-            plt.plot(self.t_track[i], self.SOC_track[i]*100, label = labels[i])
-        plt.legend()
-        plt.title('SOC')
-        plt.show() 
+        # all velocities (to easily get max)
+        Vs = np.concatenate(self.V_track)
+        self.maxV = Vs.max()/ftm 
         
-        plt.figure(figsize=(6,4), dpi = 1000)
-        for i in range(self.segment_index+1):
-            plt.plot(self.t_track[i], self.Itot_track[i], label = labels[i])
-        plt.legend()
-        plt.title('Current (Itot)')
-        plt.show() 
+        self.turnindexes = []
+        self.cruiseindexes = []
+        for i, label in enumerate(self.labels):
+            if "turn" in label:
+                self.turnindexes.append(i)
+            elif "cruise" in label:
+                self.cruiseindexes.append(i)
         
-        plt.figure(figsize=(6,4), dpi = 1000)
-        for i in range(self.segment_index+1):
-            plt.plot(self.t_track[i], self.x_track[i]/ftm, label = labels[i])
-        plt.legend()
-        plt.title('Distance (ft)')
-        plt.show() 
-        
-    
+        if plot:
+            lw = 1.3
+            fig, ax = plt.subplots(figsize=(6,2), dpi = 1000)
+            #plotting the one gridline around 100 fps for reference
+            # ax.axhline(100, color='#D3D3D3', linewidth=0.8)
+            # ax.axhline(80, color='#D3D3D3', linewidth=0.8)
+            #plotting the laptime lines
+            ax.plot([self.tlap1end, self.tlap1end], [0, self.maxV+5], '--', color='orange', linewidth=1)
+            ax.plot([self.tlap2end, self.tlap2end], [0, self.maxV+5], '--', color='orange', linewidth=1)
+            ax.plot([self.tlap3end, self.tlap3end], [0, self.maxV+5], '--', color='orange', linewidth=1)
+            ax.plot(self.t_track[0], self.V_track[0]/ftm, color='black', label='Takeoff', linewidth = lw)
+            ax.plot(self.t_track[1], self.V_track[1]/ftm, color='#0343DF', label='Climb', linewidth = lw)
+            #plotting all the turn and cruise segments
+            for i, segment in enumerate(self.t_track):
+                if i in self.cruiseindexes:
+                    ax.plot(self.t_track[i], self.V_track[i]/ftm, color = '#cc0000', linewidth = lw)
+                elif i in self.turnindexes:
+                    ax.plot(self.t_track[i], self.V_track[i]/ftm, color = '#666666', linewidth = lw)
+            # ax.plot(M2_t, M2_V/ftm, color='black')
+            #for the legend
+            ax.plot([], [], color='#cc0000', label='Turn')
+            ax.plot([], [], color='#666666', label='Cruise')
             
+            #laptime labels
+            ax.text(self.tlap1end-2.5, 40, f'Lap 1: {self.tlap1end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
+            ax.text(self.tlap2end-2.5, 40, f'Lap 2: {self.tlap2end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
+            ax.text(self.tlap3end-2.5, 40, f'Lap 3: {self.tlap3end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
+            # ax.set_ylim(bottom=0, top = self.maxV + 5)
+            # ax.set_xlim(left=0, right = self.tlap3end + 2)
+            plt.yticks([0, 20, 40, 60, 80, 100, 120, 140, 160])
+            plt.xlabel('Time (s)')
+            plt.ylabel('Velocity (fps)')
+            plt.title('Three Lap Velocity Profile')
+            plt.grid()
+            plt.legend(loc='lower center', prop={'size': 9}, framealpha=1.0, fancybox = False, edgecolor='black', ncol=4, bbox_to_anchor = (0.5, -0.65))
+            # fig.savefig('M2VelocityProfile_4_7_V13', dpi=800, bbox_inches="tight", pad_inches=0.05)
+            plt.show()
+    
+    def PlotThreeLap(self, char):
+        '''
+        generalized plot that will plot any characteristic from:
+            -  acceleration (m/s^2 by default)
+            - Velocity (m/s) by default 
+            - Position (m) 
+            - Altitude (m)
+            - Thrust (N)
+            - Drag (N) (should make a plot with this and thrust!)
+            - n (load factor)
+            - SOC
+            - Itot (current) (A)
+            - RPM 
+            - Torque (Q) N*m
+            - Electric Power for one motor!
+            
+        Add in an all option that plots all at once (maybe make it a mosaic too!)
+        '''
+        units = ''
+        conversion = 1.0
+        special = False
+        if char == 'Acceleration':
+            var = self.a_track
+            units = 'ft/s^2'
+            conversion = 1/ftm
+        elif char == 'Velocity':
+            var = self.V_track
+            units = 'ft/s'
+            conversion = 1/ftm
+        elif char == 'Position':
+            var = self.x_track
+            units = 'ft'
+            conversion = 1/ftm
+        elif char == 'Altitude':
+            var = self.h_track
+            units = 'ft'
+            conversion = 1/ftm
+        elif char == 'Thrust' or char == 'Drag':
+            special = True
+            var1 = self.T_track
+            var2 = self.D_track
+            units = 'lbf'
+            conversion = 1/lbfN
+            # var2 = self.D_track
+        elif char == 'Load Factor':
+            var = self.n_track 
+        elif char == 'SOC':
+            var = self.SOC_track 
+            conversion = 100.0
+            units = '%'
+        elif char == 'Current':
+            var = self.Itot_track 
+            units = 'A'
+        elif char == 'RPM':
+            var = self.RPM_track 
+            units = 'RPM'
+        elif char == 'Torque':
+            var = self.Q_track 
+            units = 'N*m'
+            conversion = 1.0
+        elif char == 'Power':
+            var = self.P_track
+            units = 'W'
+            conversion = 1.0
+        # elif self.mission_success == False:
+        #     print('Mission Failed; Plots Aborted')
+        else:
+            print('\nCharacteristic not recognized\nOptions are:\n\tVelocity, Current, SOC, Position,\n\tAltitude, Thrust, Drag, Acceleration,\n\tLoad Factor, RPM, Torque, and Power')
         
+        if special:
+            varuse = var1 + var2
+            concatvar = np.concatenate(varuse)
+        else:
+            concatvar = np.concatenate(var)
+            
+        maxVar = concatvar.max()
+        minVar = concatvar.min()
         
+        lw = 1.3
+        fig, ax = plt.subplots(figsize=(6,4), dpi = 1000)
+        ax.plot([self.tlap1end, self.tlap1end], [0, maxVar*conversion+5], '--', color='orange', linewidth=1)
+        ax.plot([self.tlap2end, self.tlap2end], [0, maxVar*conversion+5], '--', color='orange', linewidth=1)
+        ax.plot([self.tlap3end, self.tlap3end], [0, maxVar*conversion+5], '--', color='orange', linewidth=1)
+
+        #plotting all the turn and cruise segments
+        if special: # special is for the thrust - drag or any other multiplot!
+            ax.plot(self.t_track[0], var1[0]*conversion, color='black', label='Takeoff Thrust', linewidth = lw)
+            ax.plot(self.t_track[1], var1[1]*conversion, color='#0343DF', label='Climb Thrust', linewidth = lw)
+            ax.plot(self.t_track[0], var2[0]*conversion, color='green', label='Takeoff Drag', linewidth = lw)
+            ax.plot(self.t_track[1], var2[1]*conversion, color='purple', label='Climb Drag', linewidth = lw)
+
+            for i, segment in enumerate(self.t_track):
+                if i in self.cruiseindexes:
+                    ax.plot(self.t_track[i], var1[i]*conversion, color = '#cc0000', linewidth = lw)
+                    ax.plot(self.t_track[i], var2[i]*conversion, color = 'cyan', linewidth = lw)
+                elif i in self.turnindexes:
+                    ax.plot(self.t_track[i], var1[i]*conversion, color = '#666666', linewidth = lw)
+                    ax.plot(self.t_track[i], var2[i]*conversion, color = 'pink', linewidth = lw)
+            #for the legend
+            ax.plot([], [], color='#cc0000', label='Turn Thrust')
+            ax.plot([], [], color='#666666', label='Cruise Thrust')
+            ax.plot([], [], color='cyan', label='Turn Drag')
+            ax.plot([], [], color='pink', label='Cruise Drag')
+
+        else:
+            ax.plot(self.t_track[0], var[0]*conversion, color='black', label='Takeoff', linewidth = lw)
+            ax.plot(self.t_track[1], var[1]*conversion, color='#0343DF', label='Climb', linewidth = lw)
+
+            for i, segment in enumerate(self.t_track):
+                if i in self.cruiseindexes:
+                    ax.plot(self.t_track[i], var[i]*conversion, color = '#cc0000', linewidth = lw)
+                elif i in self.turnindexes:
+                    ax.plot(self.t_track[i], var[i]*conversion, color = '#666666', linewidth = lw)
+                    
+            ax.plot([], [], color='#cc0000', label='Turn')
+            ax.plot([], [], color='#666666', label='Cruise')
+            
+        #laptime labels
+        ax.text(self.tlap1end-2.5, (minVar*conversion+maxVar*conversion)/10, f'Lap 1: {self.tlap1end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
+        ax.text(self.tlap2end-2.5, (minVar*conversion+maxVar*conversion)/10, f'Lap 2: {self.tlap2end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
+        ax.text(self.tlap3end-2.5, (minVar*conversion+maxVar*conversion)/10, f'Lap 3: {self.tlap3end:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
+        # ax.set_ylim(bottom=0, top = self.maxV + 5)
+        # ax.set_xlim(left=0, right = self.tlap3end + 2)
+        # plt.yticks([0, 20, 40, 60, 80, 100, 120, 140, 160])
+        plt.xlabel('Time (s)')
+        if special:
+            plt.ylabel('Forces (lbf)')
+            plt.title('Three Lap Force Profile')
+        else:
+            plt.ylabel(f'{char} ({units})')
+            plt.title(f'Three Lap {char} Profile')
+        plt.grid()
+        plt.legend(loc='lower center', prop={'size': 9}, framealpha=1.0, fancybox = False, edgecolor='black', ncol=4, bbox_to_anchor = (0.5, -0.3))
+        # fig.savefig('M2VelocityProfile_4_7_V13', dpi=800, bbox_inches="tight", pad_inches=0.05)
+        plt.show()

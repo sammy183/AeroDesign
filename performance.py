@@ -236,7 +236,7 @@ def SimulateTakeoff(self, texpect = 20, results = True, plot = False):
 #     ts = np.linspace(0, 500, n)
 #     dt = ts[2]-ts[1]
     
-#     V = np.zeros(n+1)
+#     V = np.zeros(m+1)
 #     V[0] = 15.0 #initial V (m/s)
 #     a = np.zeros(n)
 #     T = np.zeros(n)
@@ -244,7 +244,7 @@ def SimulateTakeoff(self, texpect = 20, results = True, plot = False):
 #     Itot = np.zeros(n)
 #     RPM = np.zeros(n)
 #     D = np.zeros(n)
-#     SOC = np.zeros(n+1)
+#     SOC = np.zeros(m+1)
 #     SOC[0] = 1.0 #initial state of charge
     
 #     # propulsions.ModelCalcs(self, V[i], t)
@@ -326,9 +326,9 @@ def SimulateTakeoff(self, texpect = 20, results = True, plot = False):
 #     # xlof = trapezoid(Vs[:liftoff], x=ts[:liftoff])
 
 #%% The real functions start here!
-@njit(fastmath=True) #DOESN'T WORK BC OF THE TRAPEZOID USAGE!!!, NOW IT DOES!!
-def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, CDtoPostR, CLtoPostR, CLmax,  
-            mass, mufric, Vlof, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, ds, n = 1000, plot = False, results = False):
+@njit #DOESN'T WORK BC OF THE TRAPEZOID USAGE!!!, NOW IT DOES!!
+def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, CDtoPostR, CLtoPostR, CLmax, 
+            mass, mufric, Vlof, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, ds, m = 1000, plot = False, results = False):
     '''
     
     Several approximations in this code:
@@ -348,23 +348,23 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
     
     
     # timestepping from mission start to rotate velocity assumption
-    ts = np.linspace(0.0, texpect, n) # start the mission at 0.0 s
+    ts = np.linspace(0.0, texpect, m) # start the mission at 0.0 s
     dt = ts[2]-ts[1]
     
-    x = np.zeros(n+1)
-    V = np.zeros(n+1)
-    SOC = np.zeros(n+1)
+    x = np.zeros(m+1)
+    V = np.zeros(m+1)
+    SOC = np.zeros(m+1)
     V[0] = 0.0 #initial V (m/s)
     SOC[0] = 1.0 #initial state of charge
 
-    a = np.zeros(n)
-    T = np.zeros(n)
-    P = np.zeros(n)
-    Itot = np.zeros(n)
-    Q = np.zeros(n)
-    RPM = np.zeros(n)
-    D = np.zeros(n)
-    L = np.zeros(n)
+    a = np.zeros(m)
+    T = np.zeros(m)
+    P = np.zeros(m)
+    Itot = np.zeros(m)
+    Q = np.zeros(m)
+    RPM = np.zeros(m)
+    D = np.zeros(m)
+    L = np.zeros(m)
     
     for i, t in enumerate(ts):
         if SOC[i] < (1-ds):
@@ -410,21 +410,21 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
     Beta_L = 1 + 0.269*(CLtoPostR**1.45)
     CLige_oge = (1 + (delta_L*(288*(h/b)**0.787)*(np.e**(-9.14*((h/b)**0.327))))/(AR**0.882))/Beta_L
 
-    ts2 = np.linspace(ts[-1], texpect, n) # start the mission at 0.0 s
+    ts2 = np.linspace(ts[-1], texpect, m) # start the mission at 0.0 s
     dt2 = ts[2]-ts[1]
     
-    x2 = np.zeros(n+1)
-    V2 = np.zeros(n+1)
-    SOC2 = np.zeros(n+1)
+    x2 = np.zeros(m+1)
+    V2 = np.zeros(m+1)
+    SOC2 = np.zeros(m+1)
 
-    a2 = np.zeros(n)
-    T2 = np.zeros(n)
-    P2 = np.zeros(n)
-    Itot2 = np.zeros(n)
-    Q2 = np.zeros(n)
-    RPM2 = np.zeros(n)
-    D2 = np.zeros(n)
-    L2 = np.zeros(n)
+    a2 = np.zeros(m)
+    T2 = np.zeros(m)
+    P2 = np.zeros(m)
+    Itot2 = np.zeros(m)
+    Q2 = np.zeros(m)
+    RPM2 = np.zeros(m)
+    D2 = np.zeros(m)
+    L2 = np.zeros(m)
     
     V2[0] = V[-1]      # initial V (m/s)
     SOC2[0] = SOC[-1]  # initial state of charge
@@ -467,6 +467,8 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
     
     # combine (this is so badly done, there MUST be a better way)
     a = np.append(a, a2)
+    h = np.zeros(a.size) # no altitude gained during ground roll!
+    n = np.zeros(a.size) # not calculating load factor for takeoff
     V = np.append(V, V2)
     x = np.append(x, x2)
     ts = np.append(ts, ts2)
@@ -478,12 +480,12 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
     P = np.append(P, P2)
     Q = np.append(Q, Q2)
     
-    return(a, V, x, ts, T, D, SOC, Itot, RPM, P, Q)
+    return(a, V, x, h, ts, T, D, n, SOC, Itot, RPM, P, Q)
 
 #%% Cruise
-@njit(fastmath=True)
-def Cruise(segment_distance, V_initial, t_initial, SOC_initial, x_initial, CL0, CD0, 
-           Sw, rho, mass, ds, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, tend = 500, n = 1000):
+@njit
+def Cruise(segment_distance, V_initial, t_initial, SOC_initial, x_initial, h_initial, CL0, CD0, 
+           Sw, rho, MGTOW, mass, ds, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, tend = 500, m = 1000):
     '''
     Segment distance in m
     Initial velocity in m/s
@@ -495,21 +497,25 @@ def Cruise(segment_distance, V_initial, t_initial, SOC_initial, x_initial, CL0, 
     
     max usable ds is 0.9999 (1.0 breaks the curve!)
     '''
+    if segment_distance < 0:
+        raise ValueError('Segment Distance < 0')
     
-    ts = np.linspace(t_initial, tend, n)
+    ts = np.linspace(t_initial, tend, m)
     dt = ts[2]-ts[1]
     
-    x = np.zeros(n+1)
-    V = np.zeros(n+1)
-    a = np.zeros(n)
-    T = np.zeros(n)
-    P = np.zeros(n)
-    Itot = np.zeros(n)
-    Q = np.zeros(n)
-    RPM = np.zeros(n)
-    D = np.zeros(n)
+    x = np.zeros(m+1)
+    h = np.ones(m+1)*h_initial
+    V = np.zeros(m+1)
+    a = np.zeros(m)
+    T = np.zeros(m)
+    P = np.zeros(m)
+    Itot = np.zeros(m)
+    Q = np.zeros(m)
+    RPM = np.zeros(m)
+    D = np.zeros(m)
+    n = np.ones(m)
     
-    SOC = np.zeros(n+1)
+    SOC = np.zeros(m+1)
     SOC[0] = SOC_initial #initial state of charge
     V[0] = V_initial #initial V (m/s)
     x[0] = x_initial
@@ -540,19 +546,205 @@ def Cruise(segment_distance, V_initial, t_initial, SOC_initial, x_initial, CL0, 
     a = a[:endindex]
     V = V[:endindex]
     x = x[:endindex]
+    h = h[:endindex]
     ts = ts[:endindex]
     T = T[:endindex]
     D = D[:endindex]
+    n = n[:endindex]
     SOC = SOC[:endindex]
     Itot = Itot[:endindex]
     RPM = RPM[:endindex]
     P = P[:endindex]
     Q = Q[:endindex]
     
-    return(a, V, x, ts, T, D, SOC, Itot, RPM, P, Q)
+    return(a, V, x, h, ts, T, D, n, SOC, Itot, RPM, P, Q)
 
 #%% Climb (essentially cruise but with a theta modifier)
-
+@njit
+def Climb(climb_altitude, theta, max_segment_distance, V_initial, t_initial, SOC_initial, x_initial, h_initial, CL0, CD0, 
+           Sw, rho, MGTOW, mass, ds, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, tend = 500, m = 1000):
+    '''
+    climb alititude in m
+    theta (climb angle) in deg
+    h_initial is initial height in m
+    
+    Assumptions:
+        - Start the climb half a meter off the ground (no initial climb modeled)
+        - No ground effect corrections implmeented
+    
+    Should I add altitude to relevant variables? 
+    Not really useful here but I think it'll add a lot of versatility, esp with later atmospheric modules
+    
+    '''
+    
+    ts = np.linspace(t_initial, tend, m)
+    dt = ts[2]-ts[1]
+    
+    x = np.zeros(m+1)
+    V = np.zeros(m+1)
+    a = np.zeros(m)
+    T = np.zeros(m)
+    P = np.zeros(m)
+    Itot = np.zeros(m)
+    Q = np.zeros(m)
+    RPM = np.zeros(m)
+    D = np.zeros(m)
+    n = np.zeros(m)
+    
+    h = np.zeros(m+1) #altitude now
+    
+    SOC = np.zeros(m+1)
+    SOC[0] = SOC_initial #initial state of charge
+    V[0] = V_initial #initial V (m/s)
+    x[0] = x_initial
+    h[0] = h_initial #start half a meter above the ground
+    
+    theta = theta*np.pi/180
+    for i, t in enumerate(ts):
+        if SOC[i] < (1-ds):
+            endindex = i
+            break
+        elif h[i]-h_initial > climb_altitude:
+            endindex = i
+            break
+        elif x[i]-x_initial > max_segment_distance:
+            endindex = i
+            break
+        
+        T[i], P[i], Itot[i], RPM[i], Q[i] = propulsions.ModelCalcsExternalSOC(V[i], SOC[i], rpm_list, NUMBA_PROP_DATA, 
+                                                                              CB, ns, Rint, KV, Rm, nmot, I0, ds) 
+        D[i] = 0.5*rho*(V[i]**2)*Sw*CD0
+        L = 0.5*rho*(V[i]**2)*Sw*CL0
+        
+        Wuse = mass*9.81*np.sin(theta) # weight at a certain climb angle
+        a[i] = (T[i]-D[i] - Wuse)/mass
+        
+        # PROBLEM: this is derivative method
+        V[i+1] = V[i] + a[i]*dt
+        
+        n[i] = (T[i]/MGTOW)*(L/D[i])
+        
+        
+        x[i+1] = x[i] + V[i]*dt*np.cos(theta) + 0.5*a[i]*(dt**2)*np.cos(theta)
+        h[i+1] = h[i] + V[i]*dt*np.sin(theta) + 0.5*a[i]*(dt**2)*np.sin(theta)
+        
+        # determining acceleration change
+        SOC[i+1] = SOC[i] - (Itot[i]*dt)/(CB*3.6)
+    
+    a = a[:endindex]
+    V = V[:endindex]
+    x = x[:endindex]
+    h = h[:endindex]
+    ts = ts[:endindex]
+    T = T[:endindex]
+    D = D[:endindex]
+    n = n[:endindex]
+    SOC = SOC[:endindex]
+    Itot = Itot[:endindex]
+    RPM = RPM[:endindex]
+    P = P[:endindex]
+    Q = Q[:endindex]
+    
+    return(a, V, x, h, ts, T, D, n, SOC, Itot, RPM, P, Q)
 
 
 #%% Turn (with bank angle implementation)
+def Turn(segment_degrees, V_initial, t_initial, SOC_initial, x_initial, h_initial, CLturn, CDturn, 
+           Sw, rho, MGTOW, mass, ds, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, tend = 15, m = 1000):
+    '''
+    Assumptions: 
+        - Sustained level turns
+        - CL/CD at 10 deg aoa
+        - g = 9.81 m/s^2
+    '''
+    g = MGTOW/mass
+    
+    ts = np.linspace(t_initial, tend, m)
+    dt = ts[2]-ts[1]
+    
+    x = np.zeros(m+1)
+    V = np.zeros(m+1)
+    a = np.zeros(m)
+    T = np.zeros(m)
+    P = np.zeros(m)
+    Itot = np.zeros(m)
+    Q = np.zeros(m)
+    RPM = np.zeros(m)
+    D = np.zeros(m)
+    h = np.ones(m+1)*h_initial #altitude
+    
+    # add in load factor to all or no? I say yes
+    n = np.zeros(m+1)
+    n[0] = 1.0 # from level flight
+    deg = np.zeros(m+1)
+    
+    # specific quantities for turns
+    L = np.zeros(m)
+    turnrate = np.zeros(m)
+    turnradius = np.zeros(m)
+    
+    SOC = np.zeros(m+1)
+    SOC[0] = SOC_initial #initial state of charge
+    V[0] = V_initial #initial V (m/s)
+    x[0] = x_initial
+    h[0] = h_initial #start half a meter above the ground
+    n[0] = 1.0 #start from cruise
+    
+    for i, t in enumerate(ts):
+        if SOC[i] < (1-ds):
+            endindex = i
+            break
+        elif deg[i] > segment_degrees:
+            endindex = i
+            break
+        
+        T[i], P[i], Itot[i], RPM[i], Q[i] = propulsions.ModelCalcsExternalSOC(V[i], SOC[i], rpm_list, NUMBA_PROP_DATA, 
+                                                                              CB, ns, Rint, KV, Rm, nmot, I0, ds) 
+        D[i] = 0.5*rho*(V[i]**2)*Sw*CDturn
+        L[i] = 0.5*rho*(V[i]**2)*Sw*CLturn
+        
+        n[i] = (T[i]/MGTOW)*(L[i]/D[i]) # load factor for sustained turn
+        # if n[i] < 1.0:
+        #     n[i] = 1.0 # this is level flight though...
+        
+        turnrate[i] = ((g*np.sqrt(n[i]**2 - 1))/V[i])*(180/np.pi) # for some scenario n < 1
+        turnradius[i] = (V[i]**2)/(g*np.sqrt(n[i]**2-1))
+        deg[i+1] = deg[i] + turnrate[i]*dt
+        
+        
+        a[i] = (T[i]-D[i])/mass
+        V[i+1] = V[i] + a[i]*dt
+        x[i+1] = x[i] + V[i]*dt + 0.5*a[i]*(dt**2)
+        
+        # assume level altitude (for now, accurately calculating climbing turns is my dream but I think it will have to wait for 6DOF)
+        # h[i+1] = h[i] + V[i]*dt + 0.5*a[i]*(dt**2)
+        
+        # determining acceleration change
+        SOC[i+1] = SOC[i] - (Itot[i]*dt)/(CB*3.6)
+    
+    a = a[:endindex]
+    V = V[:endindex]
+    x = x[:endindex]
+    h = h[:endindex]
+    ts = ts[:endindex]
+    T = T[:endindex]
+    D = D[:endindex]
+    n = n[:endindex]
+    SOC = SOC[:endindex]
+    Itot = Itot[:endindex]
+    RPM = RPM[:endindex]
+    P = P[:endindex]
+    Q = Q[:endindex]
+        
+    return(a, V, x, h, ts, T, D, n, SOC, Itot, RPM, P, Q) # one little thing up here can mess up everything loll (took 2 hrs at 2 am to debug)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
