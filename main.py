@@ -71,7 +71,7 @@ Sw = 9.0*ftm*ftm #9.0 ft2 then converted to M
 CLmax = 1.6
 CL = 0.44
 CLto = 0.9
-CD = 0.045
+CD = 0.055 #0.045
 CD0 = 0.03
 e = 0.8
 AR = 4.0 
@@ -84,13 +84,15 @@ taper = 1.0
 MGTOW = 15*lbfN
 
 # takeoff coefs
-CDtoPreR = 0.07
-CDtoPostR = 0.3
-CLtoPreR = 0.9
-CLtoPostR = 1.7
+CDtoPreR = 0.07     # CD at aoa when on landing gear + high lift devices
+CDtoPostR = 0.3     # CD at rotation aoa + high lift devices
+CLtoPreR = 0.9      # CL at aoa when on landing gear + high lift devices
+CLtoPostR = 1.7     # CD at rotation aoa + high lift devices
 
-CL10 = 1.7221 # with flaps!!
-CD10 = 0.173191721
+CLturn = 1.7221         # with flaps at ~ 10 deg aoa
+CDturn = 0.324996513016 # with flaps at ~ 10 deg aoa
+
+nmax = 3 #g
 
 # theoretical without flaps
 # CL10 = 1.1 
@@ -107,10 +109,10 @@ if __name__ == '__main__':
     Design = ad.PointDesign() 
     Design.Battery('Gaoneng_8S_3300', 0.85)
     Design.Motor('C-4120/30', 2)
-    Design.Prop('14x14')
+    Design.Prop('12x12E')
     Design.Parameters(rho, MGTOW, Sw, AR, CLmax, 
                       CLto, CL, CD, CD0, e, 
-                      b, h0, taper, 'dry concrete')
+                      b, h0, taper, 'dry concrete', nmax)
 
 # to check setup and options:
     # Design.ViewSetup()
@@ -122,7 +124,7 @@ if __name__ == '__main__':
     
 # Runtimes plots the runtime for a specified design vs the freestream velocity. 
 # The input number, n determines the number of iterations (more n --> nicer plot and more accurate but increased computational time)
-    Design.Runtimes(100, verbose=False)
+    # Design.Runtimes(100, verbose=False)
     
 # PointDesignData plots the thrust, RPM, current, and electric power for freestream velocity vs battery runtime
     # Design.PointDesignData(200, Ilimit = 100, grade = 15)
@@ -130,7 +132,7 @@ if __name__ == '__main__':
 # ThrustCruisePareto plots the Pareto front of Static Thrust vs Cruise Velocity for a given PointDesign 
 # and either a sepecified propeller/list of propellers or all propellers in the APC database. 
 # For specified propellers use proplist = ['propname', 'propname', 'etc']
-    # Design.ThrustCruisePareto(proplist = None, Ilimit = 105, AnnotateAll = False)
+    # Design.ThrustCruisePareto(proplist = None, Ilimit = 50, AnnotateAll = False)
     
 # TakeoffCruisePareto plots the Pareto front of takeoff distance vs cruise velocity for a given PointDesign.
     # Design.TakeoffCruisePareto(proplist = None, Ilimit = 105, xloflimit = 65)
@@ -155,21 +157,21 @@ if __name__ == '__main__':
     #                          SkipInvalid = True, AllPareto = False)
 
 #%% performance funcs
-    # Design.DetailedTakeoff(plot = True)
-    
     Design.PrepMissionSim(CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR, 
-                          CD10, CL10) 
+                          CDturn, CLturn) 
     
+    # Design.DetailedTakeoff(aoa_rotation = 10, t_expect = 60, plot = True)
+
     # Design.DBF_ThreeLaps(aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10, plot = False)
     # Design.PlotMission('Velocity')
     # Design.PlotMission('SOC')
     # Design.PlotMission('Current')
 
-    Design.DBF_MaxLaps(time_limit = 300, aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10)
-    # main important ones
-    Design.PlotMission('Velocity')
-    Design.PlotMission('SOC')
-    Design.PlotMission('Current')
+    # Design.DBF_MaxLaps(time_limit = 300, aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10)
+    # main important quantities
+    # Design.PlotMission('Velocity')
+    # Design.PlotMission('SOC')
+    # Design.PlotMission('Current')
     
     # others useful for diagnostics!
     # Design.PlotMission('Acceleration')
@@ -181,4 +183,40 @@ if __name__ == '__main__':
     # Design.PlotMission('Torque')
     # Design.PlotMission('Power')
 
+    # format for custom missions:
+        # 'Takeoff', aoa_rotation (deg)
+        # 'Climb', change in altitude (m), climb/descent angle (deg), horizontal distance limit (m) (set to a huge number to ignore)
+        # 'Cruise', distance (m)
+        # 'Turn', degrees
+    # the turn performance forces the aircraft to at least be at stall speed, then instantaneously turn until reaching the nmax limit
+        
+    # custom_mission = [('Takeoff', 10),
+    #                   ('Climb', 500*ftm, 10, 1e9),
+    #                   ('Turn', 180), 
+    #                   ('Cruise', 3000*ftm),
+    #                   ('Climb', 300*ftm, 10, 1e9),
+    #                   ('Cruise', 300*ftm),
+    #                   ('Climb', 150*ftm, -5, 1e9),
+    #                   ('Cruise', 1500*ftm)]
+    
+    # ##### FUTURE WORK: integrate high lift device options into Climb/Turn SEGMENTS ######
+    # ##### (and potentially deflections?)
+    
+    # Design.MissionProfile(custom_mission)
+    # Design.PlotMission('Velocity')
+    # Design.PlotMission('SOC')
+    # Design.PlotMission('Altitude')
+
+    # others useful for diagnostics!
+    # Design.PlotMission('Current')
+    # Design.PlotMission('Acceleration')
+    # Design.PlotMission('Thrust')
+    # Design.PlotMission('Load Factor')
+    # Design.PlotMission('RPM')
+    # Design.PlotMission('Torque')
+    # Design.PlotMission('Power')
+    
+    
+    Design.EnergyManeuverability()    
+    
 

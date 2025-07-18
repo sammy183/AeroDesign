@@ -1306,7 +1306,7 @@ def PlotTCPareto_mp(self, verbose=False):
             except:
                 continue
     
-    print(f'Analyzing {len(self.proplist)} propellers for Pareto front (optimized)...')
+    print(f'\nAnalyzing {len(self.proplist)} propellers for Pareto front (optimized)...')
     
     # Calculate static thrust and cruise speed for each prop using optimized function
     prop_data = []

@@ -72,7 +72,13 @@ class PointDesign:
         self.motor = False
         self.prop = False
         self.parameters = False
+        self.PreppedMissionSim = False
     
+    ########################################################
+    ########################################################
+    ############### COMPONENT INITIALIZATION ###############
+    ########################################################
+    ########################################################
     def Battery(self, batt_name, discharge):
         '''
         batt_name will be manufacturer_#cellS_capacity
@@ -122,7 +128,7 @@ class PointDesign:
         self.rpm_list = np.array(self.RPM_VALUES)
         self.prop = True
         
-    def Parameters(self, rho, MGTOW, Sw, AR, CLmax, CLto, CL, CD, CD0, e, b, h0, taper, takeoff_surface):
+    def Parameters(self, rho, MGTOW, Sw, AR, CLmax, CLto, CL, CD, CD0, e, b, h0, taper, takeoff_surface, n_max_lim):
         '''
         rho     air density (kg/m^3)
         MGTOW   aircraft gross weight in N
@@ -172,6 +178,9 @@ class PointDesign:
             self.mufric = 0.08
         else:
             print('\nTakeoff surface not recognized\nOptions are: dry concrete, wet concrete, icy concrete\n\t\t\thard turf, firm dirt, soft turf, wet grass')
+        
+        self.nmax = n_max_lim
+        
         self.parameters = True
                 
     def ViewSetup(self):
@@ -179,7 +188,7 @@ class PointDesign:
               f'Motor Specs:   {self.nmot:.0f} {self.motor_name}, {self.KV} KV, I0 = {self.I0} A, {self.Rm} Ohm, Max Power = {self.Pmax} W\n'
               f'Aerodynamics:  CL = {self.CL}, CD = {self.CD}, CLto = {self.CLto}, CLmax = {self.CLmax}, CD0 = {self.CD0}, e = {self.e}\n'
               f'Geometry:      Sw = {self.Sw:.4f} m^2, AR = {self.AR} \n'
-              f'Extras (WIP):  rho = {self.rho} kg/m^3')
+              f'Extras (WIP):  rho = {self.rho} kg/m^3, maximum load factor = {self.nmax}')
     
     def MotorOptions(self):
         df = pd.read_csv('Databases/Motors.csv')
@@ -202,21 +211,21 @@ class PointDesign:
             
     def CheckVariables(self, proptest = True, motortest = True):
         if self.battery == False:
-            print('Please add a battery to PointDesign')
-            return False
+            raise ValueError('Please add a battery to PointDesign with Battery(NAME, DISCHARGE)\n\t\t\tCall BatteryOptions() for information')
         elif self.motor == False and motortest:
-            print('Please add a motor to PointDesign')
-            return False
+            raise ValueError('Please add a motor to PointDesign with Motor(NAME, NUMBER)\n\t\t\tCall MotorOptions() for information')
         elif self.prop == False and proptest:
-            print('Please add a propeller to PointDesign')
-            return False
+            raise ValueError('Please add a propeller to PointDesign with Prop(NAME)\n\t\t\tCall PropellerOptions() for information')
         elif self.parameters == False:
-            print('Please define PointDesign parameters')
-            return False
+            raise ValueError('Please define PointDesign parameters with Parameters()')
         else:
             return True
 
-    # Propulsion Functions
+    ########################################################
+    ########################################################
+    ############### PROPULSION FUNCTIONS ###################
+    ########################################################
+    ########################################################
     def Runtimes(self, n, verbose = False, showthrust = True):
         '''
         TO BE OPTIMIZED LATER WITH SCIPY CONFIG OR MULTIPROCESSING
@@ -327,17 +336,15 @@ class PointDesign:
         self.xloflimit = 60
         self.Ilimit = 105
         print(propulsions.MGTOWinnerfunc_fast(self, 30.0))
-
-        
-    ############## PERFORMANCE FUNCTIONS ##############
-    def DetailedTakeoff(self, plot = True):
-        '''
-        b is wingspan in m
-        h0 is height from fuselage centerline to ground (before takeoff)
-        taper is the taper ratio'''
-        if self.CheckVariables():
-            performance.SimulateTakeoff(self, plot = plot, results = True)
     
+    
+    ########################################################
+    ########################################################
+    ########################################################
+    ############## PERFORMANCE FUNCTIONS ###################  
+    ########################################################
+    ########################################################
+    ########################################################
     def PrepMissionSim(self, CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR, CDturn, CLturn):
         print('\nMission Simulation Initialized!')
         
@@ -383,13 +390,33 @@ class PointDesign:
         
         self.CLturn = CLturn
         self.CDturn = CDturn
+        self.Vstall = np.sqrt((2*self.MGTOW)/(self.rho*self.Sw*self.CLmax)) # later modify so flaps can be specified in turn segments
+        self.Vlof = 1.15 * self.Vstall
         
         self.segment_index = 0
         self.labels = []
         
         self.CheckVariables()
         #velocity for stall and lof are already implemented!
+        self.PreppedMissionSim = True
+        
+    def CheckMissionInit(self):
+        if self.PreppedMissionSim:
+            return True
+        else:
+            raise ValueError('\nMission simulation not initialized; please use PrepMissionSim()')
+            return False
     
+    def DetailedTakeoff(self, aoa_rotation, t_expect = 50, plot = True):
+        '''
+        b is wingspan in m
+        h0 is height from fuselage centerline to ground (before takeoff)
+        taper is the taper ratio'''
+        if self.CheckVariables() and self.CheckMissionInit():
+            performance.SimulateTakeoff(self, aoa_rotation = aoa_rotation,
+                                        texpect = t_expect, 
+                                        plot = plot, results = True)
+
     def resetdata(self):
         # acceleration, velocity, position, altitude, time
         self.a_track = []
@@ -464,8 +491,8 @@ class PointDesign:
         self.segment_index += 1
         if verbose:
             print(f'Simulating {segment_degrees} deg turn')
-        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+        data = performance.Turn(segment_degrees, self.nmax,  self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)
         self.labels.append('180 deg turn')
@@ -486,8 +513,8 @@ class PointDesign:
         self.segment_index += 1
         if verbose:
             print(f'Simulating {segment_degrees} deg turn')
-        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+        data = performance.Turn(segment_degrees, self.nmax, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)
         self.labels.append('360 deg turn')
@@ -508,8 +535,8 @@ class PointDesign:
         self.segment_index += 1
         if verbose:
             print(f'Simulating {segment_degrees} deg turn')
-        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+        data = performance.Turn(segment_degrees, self.nmax, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)
         self.labels.append('180 deg turn')
@@ -519,24 +546,17 @@ class PointDesign:
         self.segment_index += 1
         if verbose:
             print(f'Simulating {segment_distance/ftm:.1f} ft cruise')
-        # print(self.segment_index, segment_distance)
-        # print(self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1])
-        # print(self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1])
         data = performance.Cruise(segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
                                   self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
-        # if len(data[8]) == 0:
-        #     print(data)
         self.updatedata(data)
         self.labels.append('500 ft cruise')
-        
-        # lap end
+        #endlap
     
     def DBF_ThreeLaps(self, aoa_rotation = 10, climb_altitude = 100*ftm, climb_angle = 10, plot = False):
         #### NOTE: FIND A BETTER WAY TO ANTICIPATE THE END OF THE SEGMENT (so it'll work beyond dbf!!!)
+        self.CheckMissionInit()
         self.resetdata()
-        self.segment_index = 0 
-        self.labels = []
         texpect = 150
         m = 5000
 
@@ -553,7 +573,7 @@ class PointDesign:
         max_segment_distance = 500*ftm # total distance allowable (climb may be cut short)
         self.segment_index += 1
         data = performance.Climb(climb_altitude, climb_angle, max_segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)
         self.labels.append('Climb')
@@ -576,8 +596,8 @@ class PointDesign:
         segment_degrees = 180
         self.segment_index += 1
         # print(f'Simulating {segment_degrees} deg turn')
-        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+        data = performance.Turn(segment_degrees, self.nmax, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)
         self.labels.append('180 deg turn')
@@ -596,8 +616,8 @@ class PointDesign:
         segment_degrees = 360
         self.segment_index += 1
         # print(f'Simulating {segment_degrees} deg turn')
-        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+        data = performance.Turn(segment_degrees, self.nmax, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)
         self.labels.append('360 deg turn')
@@ -616,8 +636,8 @@ class PointDesign:
         segment_degrees = 180
         self.segment_index += 1
         # print(f'Simulating {segment_degrees} deg turn')
-        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+        data = performance.Turn(segment_degrees, self.nmax, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)        
         self.labels.append('180 deg turn')
@@ -659,6 +679,7 @@ class PointDesign:
         
         self.turnindexes = []
         self.cruiseindexes = []
+        self.climbindexes = [1]
         for i, label in enumerate(self.labels):
             if "turn" in label:
                 self.turnindexes.append(i)
@@ -713,6 +734,7 @@ class PointDesign:
         NOTE: MGTOW IMPACTS RUNTIME SIGNIFICANTLY!!! (Unsure why!)
         '''
         self.resetdata()
+        self.CheckMissionInit()
         texpect = 150
         m = 5000
 
@@ -729,7 +751,7 @@ class PointDesign:
         max_segment_distance = 500*ftm # total distance allowable (climb may be cut short)
         self.segment_index += 1
         data = performance.Climb(climb_altitude, climb_angle, max_segment_distance, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)
         self.labels.append('Climb')
@@ -752,8 +774,8 @@ class PointDesign:
         segment_degrees = 180
         self.segment_index += 1
         # print(f'Simulating {segment_degrees} deg turn')
-        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+        data = performance.Turn(segment_degrees, self.nmax, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)
         self.labels.append('180 deg turn')
@@ -772,8 +794,8 @@ class PointDesign:
         segment_degrees = 360
         self.segment_index += 1
         # print(f'Simulating {segment_degrees} deg turn')
-        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+        data = performance.Turn(segment_degrees, self.nmax, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)
         self.labels.append('360 deg turn')
@@ -792,8 +814,8 @@ class PointDesign:
         segment_degrees = 180
         self.segment_index += 1
         # print(f'Simulating {segment_degrees} deg turn')
-        data = performance.Turn(segment_degrees, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
-                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+        data = performance.Turn(segment_degrees, self.nmax, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                  self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
                                   self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
         self.updatedata(data)        
         self.labels.append('180 deg turn')
@@ -815,24 +837,32 @@ class PointDesign:
         while time_remaining > 0:    
             print(f'Running Lap {i}')
             self.DBF_Lap()
+
             if self.SOC_track[-1][-1]-0.005 <= (1 - self.ds):
                 print('Battery Runtime Exceeded!')
                 break
-
+            
             self.lap_ends.append(self.t_track[-1][-1])
             time_remaining = time_limit - self.lap_ends[-1]
+
             i += 1
             
         if time_remaining < 0:
-            self.lap_ends = self.lap_ends[:-1] # cut the last segment bc it goes over the time limit!
+            self.lap_ends = self.lap_ends[:-1] # cut the last lap bc it goes over the time limit!
             self.labels = self.labels[:-1]
+            for i, track in enumerate(self.datatrack): # trimming the last lap (7 segments in a DBF lap)
+                self.datatrack[i] = track[:-7]
+                
             self.mission_success = True
+        
         print(f'\n{"Total number of laps:":25} {len(self.lap_ends):.0f}\n'
               f'{"End Mission Time:":25} {self.lap_ends[-1]:.2f}s\n'
-              f'{"Final Laptime:":25} {self.lap_ends[-1]-self.lap_ends[-2]:.2f}s')
+              f'{"Final Laptime:":25} {self.lap_ends[-1]-self.lap_ends[-2]:.2f}s\n'
+              f'{"Final Battery %:":25} {self.SOC_track[-1][-1]*100:.2f}%')
             
         self.turnindexes = []
         self.cruiseindexes = []
+        self.climbindexes = [1]
         for i, label in enumerate(self.labels):
             if "turn" in label:
                 self.turnindexes.append(i)
@@ -920,9 +950,10 @@ class PointDesign:
         lw = 1.3
         fig, ax = plt.subplots(figsize=(6,4), dpi = 1000)
         
-        for i, lapend in enumerate(self.lap_ends):
-            ax.plot([lapend, lapend], [0, maxVar*conversion*(6/5)], '--', color='orange', linewidth=1)
-            ax.text(lapend-2.5, (maxVar*conversion)/4, f'Lap {i+1}: {lapend:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
+        if len(self.lap_ends) != 0:
+            for i, lapend in enumerate(self.lap_ends):
+                ax.plot([lapend, lapend], [0, maxVar*conversion*(6/5)], '--', color='orange', linewidth=1)
+                ax.text(lapend-2.5, (maxVar*conversion)/4, f'Lap {i+1}: {lapend:.1f}s', rotation=90, ha='center', va='center', fontsize = 8)
 
         #plotting all the turn and cruise segments
         if special: # special is for the thrust - drag or any other multiplot!
@@ -938,6 +969,10 @@ class PointDesign:
                 elif i in self.turnindexes:
                     ax.plot(self.t_track[i], var1[i]*conversion, color = '#666666', linewidth = lw)
                     ax.plot(self.t_track[i], var2[i]*conversion, color = 'pink', linewidth = lw)
+                elif i in self.climbindexes:
+                    ax.plot(self.t_track[i], var1[i]*conversion, color = 'purple', linewidth = lw)
+                    ax.plot(self.t_track[i], var2[i]*conversion, color = 'green', linewidth = lw)
+                    
             #for the legend
             ax.plot([], [], color='#cc0000', label='Cruise Thrust')
             ax.plot([], [], color='#666666', label='Turn Thrust')
@@ -946,20 +981,27 @@ class PointDesign:
 
         else:
             ax.plot(self.t_track[0], var[0]*conversion, color='black', label='Takeoff', linewidth = lw)
-            ax.plot(self.t_track[1], var[1]*conversion, color='#0343DF', label='Climb', linewidth = lw)
+            # ax.plot(self.t_track[1], var[1]*conversion, color='#0343DF', label='Climb', linewidth = lw)
 
             for i, segment in enumerate(self.t_track):
                 if i in self.cruiseindexes:
                     ax.plot(self.t_track[i], var[i]*conversion, color = '#cc0000', linewidth = lw)
                 elif i in self.turnindexes:
                     ax.plot(self.t_track[i], var[i]*conversion, color = '#666666', linewidth = lw)
-                    
+                elif i in self.climbindexes:
+                    ax.plot(self.t_track[i], var[i]*conversion, color = '#0343DF', linewidth = lw)
+             
+            ax.plot([], [], color='#0343DF', label='Climb')
             ax.plot([], [], color='#cc0000', label='Cruise')
             ax.plot([], [], color='#666666', label='Turn')
             
         #laptime labels
-        ax.set_ylim(bottom=0, top = maxVar*conversion*(6/5))
-        ax.set_xlim(left=0, right = self.lap_ends[-1] + 2)
+        if self.lap_ends == 0:
+            ax.set_ylim(bottom=0, top = maxVar*conversion*(6/5))
+            ax.set_xlim(left=0, right = self.lap_ends[-1] + 2)
+        else:
+            ax.set_ylim(bottom=0, top = maxVar*conversion*(6/5))
+            
         # plt.yticks([0, 20, 40, 60, 80, 100, 120, 140, 160])
         plt.xlabel('Time (s)')
         if special:
@@ -979,6 +1021,78 @@ class PointDesign:
         # fig.savefig('M2VelocityProfile_4_7_V13', dpi=800, bbox_inches="tight", pad_inches=0.05)
         plt.show()
         
+        
+    # custom mission segments!
+    def MissionProfile(self, segment_data, m = 5000):
+        self.CheckMissionInit()
+        self.resetdata()
+        
+        for i, segment in enumerate(segment_data):
+            if segment[0] == 'Takeoff':
+                print(f'{segment[0]} segment')
+                # assuming no takeoff will take longer than 100s!!
+                texpect = 100
+                data = performance.Takeoff(segment[1], texpect, self.h0, self.taper, self.AR, self.b, self.MGTOW, self.rho, self.Sw, 
+                               self.CDtoPreR, self.CLtoPreR, self.CDtoPostR, self.CLtoPostR, self.CLmax,  
+                               self.mass, self.mufric, self.Vlof, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, 
+                               self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds, m = m, plot = False, results = False)
+                # issue arrising bc initial climb isn't modeled so even though we lift off at Vstall for CLturn, 
+                self.updatedata(data)
+                self.labels.append('Takeoff')
+                self.segment_index += 1
+            elif segment[0] == 'Climb':
+                if segment[2] < 0:
+                    print(f'{i}: Descend by {segment[1]/ftm:.1f} ft')
+                elif segment[2] == 0:
+                    raise ValueError('Climb angle = 0 deg')
+                else:
+                    print(f'{i}: Climb by {segment[1]/ftm:.1f} ft')
+                texpect = 5000 ##### ALTER THIS SOON TO SCALE WITH SOME GUESS #####
+                data = performance.Climb(segment[1], segment[2], segment[3], self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                          self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                          self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+                self.updatedata(data)
+                self.labels.append('Climb')
+                self.segment_index += 1
+            elif segment[0] == 'Cruise':
+                print(f'{i}: Cruise {segment[1]/ftm:.1f} ft')
+                texpect = 5000 ##### ALTER THIS SOON TO SCALE WITH SOME GUESS #####
+                data = performance.Cruise(segment[1], self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                          self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CL, self.CD, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                          self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+                self.updatedata(data)
+                self.labels.append('Cruise')
+                self.segment_index += 1
+            elif segment[0] == 'Turn':
+                print(f'{i}: Turn {segment[1]:.1f} deg')
+                texpect = 1000 ##### ALTER THIS SOON TO SCALE WITH SOME GUESS #####
+                data = performance.Turn(segment[1], self.nmax, self.V_track[self.segment_index-1][-1], self.t_track[self.segment_index-1][-1], self.SOC_track[self.segment_index-1][-1], 
+                                          self.x_track[self.segment_index-1][-1], self.h_track[self.segment_index-1][-1], self.CLturn, self.CDturn, self.Vstall, self.Sw, self.rho, self.MGTOW, self.mass, self.ds, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, 
+                                          self.KV, self.Rm, self.nmot, self.I0, tend = texpect, m = m)
+                
+                self.updatedata(data)
+                self.labels.append('Turn')
+                self.segment_index += 1
+                
+            if self.SOC_track[-1][-1]-0.005 <= (1 - self.ds):
+                print(f'Battery depleted during segment {i}')
+                break
+            
+        self.turnindexes = []
+        self.cruiseindexes = []
+        self.climbindexes = []
+        for i, label in enumerate(self.labels):
+            if "Turn" in label:
+                self.turnindexes.append(i)
+            elif "Cruise" in label:
+                self.cruiseindexes.append(i)
+            elif "Climb" in label:
+                self.climbindexes.append(i)
+
+    
+    # integrating the EM plots from EMfunc
+    def EnergyManeuverability(self):
+        pass
         
         
         

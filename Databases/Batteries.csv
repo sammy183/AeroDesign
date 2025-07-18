@@ -1,3 +1,4 @@
 ﻿Name,Manufacturer,Capacity (mAh),Cell Count,Nominal Voltage (V),Resistance (Ohm),Energy (Wh),Max Continuous Discharge (A),Max Peak Discharge (A),Weight (g)
 Gaoneng_8S_3300,Gaoneng,3300,8,29.6,0.0039,97.68,,,
 MaxAmps_12S_2000,MaxAmps,2000,12,44.4,0.036,88.8,54,200,550
+MaxAmps_6S_4500,MaxAmps,4500,6,22.2,0.018,99.9,103.5,450,612

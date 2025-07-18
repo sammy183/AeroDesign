@@ -22,8 +22,11 @@ lbfN = 4.44822
 ftm = 0.3048
 
 #%% Takeoff simulation using initial value problem methods
-def SimulateTakeoff(self, texpect = 20, results = True, plot = False):
+def SimulateTakeoff(self, aoa_rotation = 10, texpect = 200, results = True, plot = False):
     '''
+    aoa rotation is really finicky, ideally figure out what it would be irl and implement
+    Assume 10 deg otherwise
+    
     h0 = distance of fuselage centerline from ground (meters)
     b = wingspan (m)
     t expect is the expected takeoff time in s
@@ -35,22 +38,21 @@ def SimulateTakeoff(self, texpect = 20, results = True, plot = False):
     
     '''
     print('\nSimulating Ground Roll...')
-    h = self.h0
     # to account for ground effect (phillips + hunsaker correction) at SMALL aoa
     delta_D = 1 - 0.157*(self.taper**0.775 - 0.373)*(self.AR**0.417 - 1.27)
-    CDige_oge = 1 - delta_D*(np.e**(-4.74*(h/self.b)**0.814)) - ((h/self.b)**2)*(np.e**(-3.88*(h/self.b)**0.758))
+    CDige_oge = 1 - delta_D*(np.e**(-4.74*(self.h0/self.b)**0.814)) - ((self.h0/self.b)**2)*(np.e**(-3.88*(self.h0/self.b)**0.758))
     
     # at SMALL aerodynamic angles of attack
     delta_L = 1 - 2.25*(self.taper**0.00273 - 0.997)*(self.AR**0.717 + 13.6)
-    CLige_oge = 1 + delta_L*(288*((h/self.b)**0.787)*(np.e**(-9.14*((h/self.b)**0.327))))/(self.AR**0.882)
+    CLige_oge = 1 + delta_L*(288*((self.h0/self.b)**0.787)*(np.e**(-9.14*((self.h0/self.b)**0.327))))/(self.AR**0.882)
     
     # Pre-rotation!
     M = self.MGTOW/9.81 # mass in kg
     
     def T_Dtakeoff(t, V):
         T, _, _, _ = propulsions.ModelCalcs(self, V, t) 
-        D = 0.5*self.rho*(V**2)*self.Sw*self.CD*CDige_oge
-        L = 0.5*self.rho*(V**2)*self.Sw*self.CLto*CLige_oge
+        D = 0.5*self.rho*(V**2)*self.Sw*self.CDtoPreR*CDige_oge
+        L = 0.5*self.rho*(V**2)*self.Sw*self.CLtoPreR*CLige_oge
         F = self.mufric*(self.MGTOW-L)
         return((T - D - F)/M)
     
@@ -73,21 +75,22 @@ def SimulateTakeoff(self, texpect = 20, results = True, plot = False):
     a1 = Vs[1:rotate]/ts[1:rotate]
     
     # ROTATION phase
-    CLnew = self.CLmax-0.2 #HUGEEEE assumption, this would be changing continuously
+    # CLnew = self.CLmax-0.2 #HUGEEEE assumption, this would be changing continuously
+    CLnew = self.CLtoPostR # at some deg of rotation with high lift devices
     
     # updated using the high aoa formulations from Phillips and Hunsaker
-    Beta_D = 1 + 0.0361*(CLnew**1.21)/((self.AR**1.19)*((h/self.b)**1.51))
-    CDige_oge = (1 - delta_D*(np.e**(-4.74*(h/self.b)**0.814)) - ((h/self.b)**2)*(np.e**(-3.88*(h/self.b)**0.758)))*Beta_D
+    Beta_D = 1 + 0.0361*(CLnew**1.21)/((self.AR**1.19)*((self.h0/self.b)**1.51))
+    CDige_oge = (1 - delta_D*(np.e**(-4.74*(self.h0/self.b)**0.814)) - ((self.h0/self.b)**2)*(np.e**(-3.88*(self.h0/self.b)**0.758)))*Beta_D
     Beta_L = 1 + 0.269*(CLnew**1.45)
-    CLige_oge = (1 + (delta_L*(288*(h/self.b)**0.787)*(np.e**(-9.14*((h/self.b)**0.327))))/(self.AR**0.882))/Beta_L
+    CLige_oge = (1 + (delta_L*(288*(self.h0/self.b)**0.787)*(np.e**(-9.14*((self.h0/self.b)**0.327))))/(self.AR**0.882))/Beta_L
     
     # assume that the takeoff occurs at 10 deg aoa, and adjust the thrust vector accordingly
-    aoa = 10 #deg
+    aoa = aoa_rotation #deg
     def T_Dtakeoff(t, V):
         T, _, _, _ = propulsions.ModelCalcs(self, V, t)
         T *= np.cos(aoa*(np.pi/180))
-        D = 0.5*self.rho*(V**2)*self.Sw*self.CD*CDige_oge
-        L = 0.5*self.rho*(V**2)*self.Sw*self.CLto*CLige_oge + T*np.sin(aoa*(np.pi/180))
+        D = 0.5*self.rho*(V**2)*self.Sw*self.CDtoPostR*CDige_oge
+        L = 0.5*self.rho*(V**2)*self.Sw*self.CLtoPostR*CLige_oge + T*np.sin(aoa*(np.pi/180))
         F = self.mufric*(self.MGTOW-L)
         return((T - D - F)/M)
     
@@ -154,177 +157,6 @@ def SimulateTakeoff(self, texpect = 20, results = True, plot = False):
               f'{"Time":10} {tlof_tot:.4f} s')
     return(tlof_tot, xlof_tot)
 
-#%% next is mission simulation, use an object for each lap to simplify
-
-# def DragCalcs(self):
-#     '''
-#     V in m/s
-#     Assumes Re > Recutoff, so not great for foam planes'''
-#     #via raymer eqn
-#     e = 1.78*(1-0.045*(AR**0.68))-0.64
-
-#     #via wind tunnel testing! 
-#     CDfstatic = 0.01890 #for everything except the wing!
-    
-#     #horner eqn for Form Factor
-#     FFwing = 1+(2*t)+(60*(t**4))
-    
-#     Swet_wing = (Swet_ratio*(c/ftm))*ftm*ftm #to get Swet_wing in m!! holy fuck it's been so wrong for a while....
-    
-#     Re = (rho*V*c)/muair
-    
-#     #using np where for Re to allow for vectorization of CD
-#     #Schlichting Compressible (only works for Re > 10^5 ofc!!)
-#     CfW = np.where(Re < 1e5, 0.0070467, 0.455/((np.log10(Re))**2.58))
-    
-#     CDf_W = (FFwing*Swet_wing*CfW)/Sw
-    
-#     CDf = CDf_W + CDfstatic 
-#     CDi = (CL**2)/(np.pi*AR*e)
-#     CD = CDf + CDi
-#     return(CD)
-
-
-
-# how to best structure this???? Do I create a new object or just add methods for the PointDesign one!
-# class MissionSim(PointDesign):
-#     '''For DBF mission simulations: covers number of laps, etc'''
-#     def __init__(self):
-#         pass
-    
-#     def ThreeLapSim(self, time_limit):
-#         # first simulate takeoff
-#         tlof_tot, xlof_tot = SimulateTakeoff(self, texpect = 20, results = False, plot = False)
-        
-        # then simultate 3 laps but record the t vs V data for each segment so the plot can record them correctly
-        # ideally you could also get Thrust and battery charge across the entire time as well though.....
-        
-        
-        # I should reformat this problem
-        
-        
-#%% Problem formulation:
-
-# aircraft forces for 4 dof simulation (not full 6DOF):
-    # T, D, L, W
-# angles 
-    # climb (theta), angle of attack (aoa), bank angle (phi)
-# dependancies:
-    # velocity, mission time, past history of current (Itot) to determine current state of charge (SOC)
-    # have ModelCalcsNumba(velocity, t, rpm_list (fixed from start), numba_prop_data, CB, ns, Rint, KV, Rm, nmot, I0, ds) which returns T, P, Itot, RPM if solvable
-    # D can be determined using a predetermined CL at 10 deg aoa and CL at 0 deg aoa plus other aircraft characteristics
-    # L via the aforementioned CLs
-    # W is fixed throughout (but could depend on some angle stuff)
-
-# inputs: 
-    # CL0, CL10, CLmax, CLtakeoff, CD0lift, Sw, MGTOW, AR
-    # rho, muair (atmospheric)
-    # propeller, battery, motor (already implemented)
-
-# of these the hardest part is accurately providing CL, CD, CLtakeoff at the beginning! For initial point designs you don't often know them that well
-
-# g = 9.81
-
-# texpect = 100
-
-# def testlinearsim(self, plot = True):
-#     M = self.MGTOW/g # mass in kg
-#     # this works perfectly!! But the stepping is really inefficient tbh, could try to numbafy it?
-    
-#     # # alternative with manual stepping
-#     n = 10000
-#     ts = np.linspace(0, 500, n)
-#     dt = ts[2]-ts[1]
-    
-#     V = np.zeros(m+1)
-#     V[0] = 15.0 #initial V (m/s)
-#     a = np.zeros(n)
-#     T = np.zeros(n)
-#     P = np.zeros(n)
-#     Itot = np.zeros(n)
-#     RPM = np.zeros(n)
-#     D = np.zeros(n)
-#     SOC = np.zeros(m+1)
-#     SOC[0] = 1.0 #initial state of charge
-    
-#     # propulsions.ModelCalcs(self, V[i], t)
-#     # what if I want to account for changing Itot???
-#     for i, t in enumerate(tqdm(ts)):
-#         if SOC[i] < (1-self.ds):
-#             endindex = i
-#             print(f'\nSOC exceeds discharge at {t:.2f}s of runtime')
-#             break
-#         T[i], P[i], Itot[i], RPM[i] = propulsions.ModelCalcsExternalSOC(V[i], t, SOC[i], self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, self.KV, self.Rm, self.nmot, self.I0, self.ds) #max usable ds is 0.9999 (1.0 breaks the curve!)
-#         # determining velocity change        
-        
-#         if i > 1000 and i < 2000:
-#             CD0 = 0.32
-#         else:
-#             CD0 = self.CD0
-            
-#         D[i] = 0.5*self.rho*(V[i]**2)*self.Sw*CD0
-#         a[i] = (T[i]-D[i])/M
-#         V[i+1] = V[i] + a[i]*dt
-        
-#         # determining acceleration change
-#         SOC[i+1] = (self.CB*3.6 - trapezoid(Itot[:i], x=ts[:i]))/(self.CB*3.6)
-    
-#     ts = ts[:endindex]
-#     V = V[:endindex]
-#     a = a[:endindex]
-#     RPM = RPM[:endindex]
-#     P = P[:endindex]
-#     Itot = Itot[:endindex]
-#     T = T[:endindex]
-#     D = D[:endindex]
-#     SOC = SOC[:endindex]
-    
-#     plt.figure()
-#     plt.plot(ts, V, label='velocity')
-#     plt.plot(ts, a, label='accel')
-#     plt.legend()
-#     plt.show()
-    
-#     plt.figure()
-#     plt.plot(ts, RPM)
-#     plt.title('rpm')
-#     plt.show()
-    
-#     plt.figure()
-#     plt.plot(ts, P)
-#     plt.title('power')
-#     plt.show()
-    
-#     plt.figure()
-#     plt.plot(ts, Itot)
-#     plt.title('current')
-#     plt.show()
-    
-#     plt.figure()
-#     plt.plot(ts, T, label='Thrust')
-#     plt.plot(ts, D, label='Drag')
-#     plt.legend()
-#     plt.show()
-    
-#     plt.figure()
-#     plt.plot(ts, SOC*100)
-#     plt.title('State of Charge (%)')
-#     plt.show()
-    
-#     # t = 10
-#     # thing = propulsions.ModelCalcsNumba(25.0, t, self.rpm_list, self.NUMBA_PROP_DATA, self.CB, self.ns, self.Rint, self.KV, self.Rm, self.nmot, self.I0, 1.0) #ds = 1.0 --> SOC can be anything > 0 
-#     # print(thing)
-    
-#     # thing2 = propulsions.ModelCalcs(self, 25.0, t)
-#     # print(thing2)
-    
-#     # t2 = ts[:liftoff]
-#     # V2 = Vs[:liftoff]
-#     # d2 = cumulative_trapezoid(V2, x=t2) + d1[-1]
-#     # d2 = np.insert(d2, 0, d1[-1])
-#     # a2 = Vs[:liftoff]/ts[:liftoff]
-#     # xlof = trapezoid(Vs[:liftoff], x=ts[:liftoff])
-
 #%% The real functions start here!
 @njit #DOESN'T WORK BC OF THE TRAPEZOID USAGE!!!, NOW IT DOES!!
 def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, CDtoPostR, CLtoPostR, CLmax, 
@@ -366,6 +198,7 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
     D = np.zeros(m)
     L = np.zeros(m)
     
+    endindex = -1
     for i, t in enumerate(ts):
         if SOC[i] < (1-ds):
             endindex = i
@@ -389,6 +222,9 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
         # SOC[i+1] = (CB*3.6 - trapezoid(Itot[:i], x=ts[:i]))/(CB*3.6)
         SOC[i+1] = SOC[i] - (Itot[i]*dt)/(CB*3.6)
     
+    if V[endindex] < (4/5)*Vlof:
+        raise ValueError('Aircraft cannot get to rotation velocity!\n\t\t\tDrag, MGTOW, or surface friction must be reduced.')
+
     # trim arrays
     a = a[:endindex]
     V = V[:endindex]
@@ -401,6 +237,7 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
     RPM = RPM[:endindex]
     P = P[:endindex]
     Q = Q[:endindex]    
+    
     
     # now simulate post rotation (please don't mention my awful naming conventions)
     
@@ -430,10 +267,12 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
     SOC2[0] = SOC[-1]  # initial state of charge
     x2[0] = x[-1]
     Itot2[0] = Itot[-1] # also need to do this so SOC doesn't reset to 100!    
-        
+    
+    endindex = -1
     for i, t in enumerate(ts2):
         if SOC2[i] < (1-ds):
             endindex = i
+            
             break
         elif V2[i] > Vlof: # assume rotation at 4/5 Vlof (BIG BIG APPROX)
             endindex = i
@@ -450,7 +289,10 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
         V2[i+1] = V2[i] + a2[i]*dt2
         x2[i+1] = x2[i] + V2[i]*dt2 + 0.5*a2[i]*(dt2**2)
         SOC2[i+1] = SOC2[i] - (Itot2[i]*dt2)/(CB*3.6)
-    
+
+    if V2[endindex] < Vlof:
+        raise ValueError('Aircraft cannot takeoff!\n\t\t\tDrag, MGTOW, or surface friction must be reduced.')
+
     # trim arrays
     a2 = a2[:endindex]
     V2 = V2[:endindex]
@@ -463,9 +305,8 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
     RPM2 = RPM2[:endindex]
     P2 = P2[:endindex]
     Q2 = Q2[:endindex]
-    
-    
-    # combine (this is so badly done, there MUST be a better way)
+        
+    # combine (this is so badly done, there MUST be a better way) (could use a list and iterate but whatever)
     a = np.append(a, a2)
     h = np.zeros(a.size) # no altitude gained during ground roll!
     n = np.zeros(a.size) # not calculating load factor for takeoff
@@ -479,6 +320,17 @@ def Takeoff(aoa, texpect, h0, taper, AR, b, MGTOW, rho, Sw, CDtoPreR, CLtoPreR, 
     RPM = np.append(RPM, RPM2)
     P = np.append(P, P2)
     Q = np.append(Q, Q2)
+    
+    ############# NOW INITIAL CLIMB ###############
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     return(a, V, x, h, ts, T, D, n, SOC, Itot, RPM, P, Q)
 
@@ -534,18 +386,23 @@ def Cruise(segment_distance, V_initial, t_initial, SOC_initial, x_initial, h_ini
             endindex = i
             break
         
+        # essentially bc CL switches instantaneously between turn and cruise, 
+        # for a brief moment the lift created at CL0 is less than MGTOW
+        # elif 0.5*rho*(V[i]**2)*Sw*CL0 < MGTOW:
+            # print(0.5*rho*(V[i]**2)*Sw*CL0)
+            # print(MGTOW)
+            # Vstall = np.sqrt((2*MGTOW)/(rho*Sw*CL0))
+            # print(Vstall, V[i])
+            # raise ValueError('Aircraft too heavy for level flight')
+        
         T[i], P[i], Itot[i], RPM[i], Q[i] = propulsions.ModelCalcsExternalSOC(V[i], SOC[i], rpm_list, NUMBA_PROP_DATA, 
                                                                               CB, ns, Rint, KV, Rm, nmot, I0, ds) 
         D[i] = 0.5*rho*(V[i]**2)*Sw*CD0
         a[i] = (T[i]-D[i])/mass
-        
-        # PROBLEM: this is derivative method
         V[i+1] = V[i] + a[i]*dt
         x[i+1] = x[i] + V[i]*dt + 0.5*a[i]*(dt**2)
-        
-        # determining acceleration change
         SOC[i+1] = SOC[i] - (Itot[i]*dt)/(CB*3.6)
-    
+        
     a = a[:endindex]
     V = V[:endindex]
     x = x[:endindex]
@@ -565,7 +422,7 @@ def Cruise(segment_distance, V_initial, t_initial, SOC_initial, x_initial, h_ini
 #%% Climb (essentially cruise but with a theta modifier)
 @njit
 def Climb(climb_altitude, theta, max_segment_distance, V_initial, t_initial, SOC_initial, x_initial, h_initial, CL0, CD0, 
-           Sw, rho, MGTOW, mass, ds, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, tend = 500, m = 1000):
+           Vstall, Sw, rho, MGTOW, mass, ds, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, tend = 500, m = 1000):
     '''
     climb alititude in m
     theta (climb angle) in deg
@@ -602,12 +459,12 @@ def Climb(climb_altitude, theta, max_segment_distance, V_initial, t_initial, SOC
     x[0] = x_initial
     h[0] = h_initial #start half a meter above the ground
     
-    theta = theta*np.pi/180
+    theta = theta*np.pi/180 #convert from deg to rad
     for i, t in enumerate(ts):
         if SOC[i] < (1-ds):
             endindex = i
             break
-        elif h[i]-h_initial > climb_altitude:
+        elif np.abs(h[i]-h_initial) > climb_altitude:
             endindex = i
             break
         elif x[i]-x_initial > max_segment_distance:
@@ -617,19 +474,42 @@ def Climb(climb_altitude, theta, max_segment_distance, V_initial, t_initial, SOC
         T[i], P[i], Itot[i], RPM[i], Q[i] = propulsions.ModelCalcsExternalSOC(V[i], SOC[i], rpm_list, NUMBA_PROP_DATA, 
                                                                               CB, ns, Rint, KV, Rm, nmot, I0, ds) 
         D[i] = 0.5*rho*(V[i]**2)*Sw*CD0
-        L = 0.5*rho*(V[i]**2)*Sw*CL0
+        # L = 0.5*rho*(V[i]**2)*Sw*CL0
         
         Wuse = mass*9.81*np.sin(theta) # weight at a certain climb angle
-        a[i] = (T[i]-D[i] - Wuse)/mass
+        a[i] = (T[i] - D[i] - Wuse)/mass # acceleration along the path
         
-        # PROBLEM: this is derivative method
         V[i+1] = V[i] + a[i]*dt
-        
-        n[i] = (T[i]/MGTOW)*(L/D[i])
-        
+        n[i] = np.cos(theta) #n = L/W, in steady climb that's L*cos   #(T[i]/MGTOW)*(L/D[i])
+
+        # if L < MGTOW*np.cos(theta):
+        #     print(L)
+        #     print(MGTOW)
+        #     print(MGTOW*np.cos(theta))
+        #     # print((T[i]*np.sin(theta) - D[i]*np.sin(theta) + L*np.cos(theta) - MGTOW)/mass) # ACTUAL acceleration in the y direction
+        #     # print(a[i])
+        #     raise ValueError('Aircraft cannot climb! Try reducing climb angle or MGTOW.')
         
         x[i+1] = x[i] + V[i]*dt*np.cos(theta) + 0.5*a[i]*(dt**2)*np.cos(theta)
-        h[i+1] = h[i] + V[i]*dt*np.sin(theta) + 0.5*a[i]*(dt**2)*np.sin(theta)
+        h[i+1] = h[i] + V[i]*dt*np.sin(theta) + 0.5*a[i]*(dt**2)*np.cos(theta) # does not account for the scenario where L < MGTOW*cos(theta)!
+        
+        
+        # I'm not getting this to work right so we'll keep it simple for now. I think the problem in the descent is that L >> T and D for small aoa
+        # IRL you have to reduce throttle to descend right???
+        # ay = (T[i]*np.sin(theta) - D[i]*np.sin(theta) + L*np.cos(theta))/mass - 9.81 
+        # # if theta < 0:
+        # #     print(T[i]*np.sin(theta))
+        # #     print(D[i]*np.sin(theta))
+        # #     print(L*np.cos(theta))
+        # #     print((T[i]*np.sin(theta) - D[i]*np.sin(theta) + L*np.cos(theta))/mass)
+        # h[i+1] = h[i] + V[i]*dt*np.sin(theta) + 0.5*ay*(dt**2)
+        
+        # using specific excess power instead (assumes theta ~= sin(theta), small angle approx)
+        # dh_dt = (V[i]/MGTOW)*(T[i]-D[i])
+        # h[i + 1] = h[i] + dh_dt*dt
+        
+        if theta > 0 and h[i+1] <= h[i]:
+            raise ValueError('Aircraft cannot climb! Try reducing climb angle or MGTOW.')
         
         # determining acceleration change
         SOC[i+1] = SOC[i] - (Itot[i]*dt)/(CB*3.6)
@@ -652,8 +532,8 @@ def Climb(climb_altitude, theta, max_segment_distance, V_initial, t_initial, SOC
 
 
 #%% Turn (with bank angle implementation)
-def Turn(segment_degrees, V_initial, t_initial, SOC_initial, x_initial, h_initial, CLturn, CDturn, 
-           Sw, rho, MGTOW, mass, ds, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, tend = 15, m = 1000):
+def Turn(segment_degrees, nmaxlimit, V_initial, t_initial, SOC_initial, x_initial, h_initial, CLturn, CDturn, 
+         Vstall, Sw, rho, MGTOW, mass, ds, rpm_list, NUMBA_PROP_DATA, CB, ns, Rint, KV, Rm, nmot, I0, tend = 15, m = 1000):
     '''
     Assumptions: 
         - Sustained level turns
@@ -680,7 +560,7 @@ def Turn(segment_degrees, V_initial, t_initial, SOC_initial, x_initial, h_initia
     n = np.zeros(m+1)
     n[0] = 1.0 # from level flight
     deg = np.zeros(m+1)
-    
+        
     # specific quantities for turns
     L = np.zeros(m)
     turnrate = np.zeros(m)
@@ -700,17 +580,34 @@ def Turn(segment_degrees, V_initial, t_initial, SOC_initial, x_initial, h_initia
         elif deg[i] > segment_degrees:
             endindex = i
             break
-        
+            
         T[i], P[i], Itot[i], RPM[i], Q[i] = propulsions.ModelCalcsExternalSOC(V[i], SOC[i], rpm_list, NUMBA_PROP_DATA, 
                                                                               CB, ns, Rint, KV, Rm, nmot, I0, ds) 
         D[i] = 0.5*rho*(V[i]**2)*Sw*CDturn
         L[i] = 0.5*rho*(V[i]**2)*Sw*CLturn
         
-        n[i] = (T[i]/MGTOW)*(L[i]/D[i]) # load factor for sustained turn
-        # if n[i] < 1.0:
-        #     n[i] = 1.0 # this is level flight though...
+        # T/W*L/D assumes the aircraft is not allowed to slow down in turn or lose altitude!! (yet the aircraft DOES lose velocity in the sim)
+        # n = L/W for instantaneous (but then how do we model the slowdown or loss in altitude?)
+        # how about I just use instantaneous but I also model loss of altitude.
+        n[i] = min((T[i]/MGTOW)*(L[i]/D[i]), nmaxlimit) # load factor for sustained turn, pin to nmax if there's a limit
+        n[i] = max(n[i], 1.0)
         
-        turnrate[i] = ((g*np.sqrt(n[i]**2 - 1))/V[i])*(180/np.pi) # for some scenario n < 1
+        
+        ############## NOT CONCLUSIVE WHAT TO DO HERE: REVIEW LATER ##############
+        # n[i] = max(L[i]/MGTOW, 1.0) # this essentially forces the aircraft to accelerate if the turn would result in n < 1.0 (i.e. turning directly after a climb)
+        # n[i] = min(n[i], nmaxlimit) # cap n at the structural limit!
+        
+        # Irl you roll to some bank angle which determines your load factor n = 1/cos(phi)
+        # but I would like this to work without having to specify bank angle 
+        # how do you find the altitude loss without that tho?
+        
+        # if n[i] < 1:
+        #     print(T[i]/MGTOW)
+        #     print(L[i]/MGTOW)
+        #     print((T[i]/MGTOW)*(L[i]/D[i]))
+        #     raise ValueError(f'Load factor of {n[i]:.3f} in sustained turn\n\t\t\tAircraft cannot maintain altitude while turning!')
+        
+        turnrate[i] = ((g*np.sqrt(n[i]**2 - 1))/V[i])*(180/np.pi) # for some scenario n < 1??
         turnradius[i] = (V[i]**2)/(g*np.sqrt(n[i]**2-1))
         deg[i+1] = deg[i] + turnrate[i]*dt
         
@@ -718,7 +615,7 @@ def Turn(segment_degrees, V_initial, t_initial, SOC_initial, x_initial, h_initia
         a[i] = (T[i]-D[i])/mass
         V[i+1] = V[i] + a[i]*dt
         x[i+1] = x[i] + V[i]*dt + 0.5*a[i]*(dt**2)
-        
+                
         # assume level altitude (for now, accurately calculating climbing turns is my dream but I think it will have to wait for 6DOF)
         # h[i+1] = h[i] + V[i]*dt + 0.5*a[i]*(dt**2)
         
