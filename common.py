@@ -193,7 +193,11 @@ class PointDesign:
     def MotorOptions(self):
         df = pd.read_csv('Databases/Motors.csv')
         print('\nMotor Options:')
+        pd.set_option('display.max_rows', None)
+        pd.set_option('display.max_columns', None)
         print(df[['Manufacturer', 'Name', 'KV', 'Pmax (W)']])
+        pd.reset_option('display.max_rows')
+        pd.reset_option('display.max_columns')
         
     def BatteryOptions(self):
         df = pd.read_csv('Databases/Batteries.csv')

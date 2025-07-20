@@ -108,7 +108,7 @@ if __name__ == '__main__':
 # to initialize a setup:
     Design = ad.PointDesign() 
     Design.Battery('Gaoneng_8S_3300', 0.85)
-    Design.Motor('C-4120/30', 2)
+    Design.Motor('C-4130/20', 2)
     Design.Prop('12x12E')
     Design.Parameters(rho, MGTOW, Sw, AR, CLmax, 
                       CLto, CL, CD, CD0, e, 
@@ -152,13 +152,14 @@ if __name__ == '__main__':
     # e = time.perf_counter()
     # print(f'Time Taken: {e-s:.2f}s')
 
-# example that runs all motors + nmots:    
-    # Design.MGTOWCruisePareto(motorlist = 'all', Ilimit = 105, xloflimit = 60,
-    #                          SkipInvalid = True, AllPareto = False)
+# example that runs all motors + nmots:
+# NOTE: takes around 20s per motor    
+    Design.MGTOWCruisePareto(motorlist = 'all', Ilimit = 105, xloflimit = 150,
+                             SkipInvalid = True, AllPareto = False)
 
 #%% performance funcs
-    Design.PrepMissionSim(CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR, 
-                          CDturn, CLturn) 
+    # Design.PrepMissionSim(CDtoPreR, CDtoPostR, CLtoPreR, CLtoPostR, 
+    #                       CDturn, CLturn) 
     
     # Design.DetailedTakeoff(aoa_rotation = 10, t_expect = 60, plot = True)
 
@@ -217,6 +218,6 @@ if __name__ == '__main__':
     # Design.PlotMission('Power')
     
     
-    Design.EnergyManeuverability()    
+    # Design.EnergyManeuverability()    
     
 
